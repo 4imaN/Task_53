@@ -1,0 +1,73 @@
+services:
+  omnistock-db:
+    image: postgres:16-alpine
+    container_name: omnistock-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omnistock}
+      POSTGRES_USER: ${POSTGRES_USER:-omnistock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omnistock_local}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnistock} -d ${POSTGRES_DB:-omnistock}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - omnistock
+
+  omnistock-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: omnistock-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://omnistock:omnistock_local@omnistock-db:5432/omnistock}
+      JWT_SECRET: ${JWT_SECRET:-omnistock-local-jwt-secret-change-before-production}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-120}
+      ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-19456}
+      ARGON2_TIME_COST: ${ARGON2_TIME_COST:-2}
+      ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-1}
+      PASSWORD_HISTORY_DEPTH: ${PASSWORD_HISTORY_DEPTH:-5}
+      CAPTCHA_TTL_MINUTES: ${CAPTCHA_TTL_MINUTES:-10}
+      CAPTCHA_FAILURE_THRESHOLD: ${CAPTCHA_FAILURE_THRESHOLD:-3}
+      LOGIN_LOCKOUT_ATTEMPTS: ${LOGIN_LOCKOUT_ATTEMPTS:-7}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      UPLOAD_ROOT: ${UPLOAD_ROOT:-/data/uploads}
+      UPLOAD_QUOTA_GB: ${UPLOAD_QUOTA_GB:-50}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-omnistock-local-encryption-key-change-before-production}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-ChangeMeNow!123}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-0}
+      INTEGRATION_RATE_LIMIT: ${INTEGRATION_RATE_LIMIT:-120}
+      APP_PORT: ${APP_PORT:-3000}
+    depends_on:
+      omnistock-db:
+        condition: service_healthy
+    volumes:
+      - uploads:/data/uploads
+    expose:
+      - "3000"
+    networks:
+      - omnistock
+
+  omnistock-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: omnistock-frontend
+    depends_on:
+      - omnistock-api
+    ports:
+      - "${WEB_PORT:-80}:80"
+    networks:
+      - omnistock
+
+volumes:
+  postgres-data:
+  uploads:
+
+networks:
+  omnistock:
+    driver: bridge

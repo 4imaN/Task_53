@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment and secrets (keep .env.example trackable)
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+.angular/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / editor
+.idea/
+*.swp
+*.swo
+
+# Local tooling / artifacts (task workspace)
+sessions/

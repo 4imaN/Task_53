@@ -1,0 +1,21 @@
+FROM node:20-alpine AS base
+WORKDIR /app
+COPY apps/api/package*.json ./
+RUN npm install
+
+FROM base AS build
+COPY apps/api/ ./
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY apps/api/package*.json ./
+COPY apps/api/src ./src
+COPY apps/api/scripts ./scripts
+COPY apps/api/test ./test
+COPY scripts/wait-for-postgres.sh /usr/local/bin/wait-for-postgres.sh
+RUN chmod +x /usr/local/bin/wait-for-postgres.sh && mkdir -p /data/uploads
+CMD ["sh", "-c", "wait-for-postgres.sh && npm run migrate && npm run bootstrap:admin && node dist/index.js"]

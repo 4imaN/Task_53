@@ -1,0 +1,37 @@
+{
+  "name": "omnistock-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/run-with-local-env.mjs watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "migrate": "node scripts/run-with-local-env.mjs src/db/migrate.ts",
+    "bootstrap:admin": "node scripts/run-with-local-env.mjs src/db/bootstrap-admin.ts",
+    "jobs:run-once": "node scripts/run-with-local-env.mjs src/scripts/run-nightly-jobs.ts",
+    "test": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test --exclude \"test/api-*.integration.test.ts\"",
+    "test:security": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test/auth-security.test.ts test/password-history.test.ts",
+    "test:integration": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 npm run migrate && JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 SEED_DEMO_USERS=1 npm run bootstrap:admin && JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 RUN_DB_TESTS=1 vitest run test/api-*.integration.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^10.0.1",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/multipart": "^9.0.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/sensible": "^5.6.0",
+    "argon2": "^0.41.1",
+    "fastify": "^5.3.2",
+    "fastify-plugin": "^5.0.1",
+    "pg": "^8.14.1",
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}
