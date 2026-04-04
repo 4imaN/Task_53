@@ -12,6 +12,8 @@ const envFiles = [
   path.join(apiDir, '.env.local')
 ];
 
+const runtimeSecretDir = process.env.OMNISTOCK_SECRET_DIR || '/run/omnistock-secrets';
+
 const parseEnvFile = (fileContents) => {
   const entries = [];
   for (const rawLine of fileContents.split(/\r?\n/)) {
@@ -49,6 +51,46 @@ const parseEnvFile = (fileContents) => {
   return entries;
 };
 
+const readRuntimeSecret = (filename) => {
+  const secretPath = path.join(runtimeSecretDir, filename);
+  if (!existsSync(secretPath)) {
+    return '';
+  }
+
+  return readFileSync(secretPath, 'utf8').trim();
+};
+
+const loadRuntimeSecrets = () => {
+  const secretBindings = [
+    ['POSTGRES_PASSWORD', 'postgres_password'],
+    ['JWT_SECRET', 'jwt_secret'],
+    ['ENCRYPTION_KEY', 'encryption_key'],
+    ['DEFAULT_ADMIN_PASSWORD', 'default_admin_password']
+  ];
+
+  for (const [envName, secretFilename] of secretBindings) {
+    if (process.env[envName] !== undefined && process.env[envName] !== '') {
+      continue;
+    }
+
+    const secretValue = readRuntimeSecret(secretFilename);
+    if (secretValue) {
+      process.env[envName] = secretValue;
+    }
+  }
+
+  if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.trim()) {
+    const password = process.env.POSTGRES_PASSWORD?.trim();
+    if (password) {
+      const user = process.env.POSTGRES_USER?.trim() || 'omnistock';
+      const host = process.env.POSTGRES_HOST?.trim() || 'localhost';
+      const port = process.env.POSTGRES_PORT?.trim() || '5432';
+      const database = process.env.POSTGRES_DB?.trim() || 'omnistock';
+      process.env.DATABASE_URL = `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+    }
+  }
+};
+
 for (const envFile of envFiles) {
   if (!existsSync(envFile)) {
     continue;
@@ -61,6 +103,8 @@ for (const envFile of envFiles) {
     }
   }
 }
+
+loadRuntimeSecrets();
 
 const requiredVars = ['JWT_SECRET', 'ENCRYPTION_KEY', 'DEFAULT_ADMIN_PASSWORD'];
 const missingVars = requiredVars.filter((name) => !process.env[name] || !process.env[name].trim());

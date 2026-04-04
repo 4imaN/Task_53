@@ -1,10 +1,25 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const testFileDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = [
+  path.resolve(testFileDir, '..', '..', '..'),
+  path.resolve(testFileDir, '..', '..'),
+  process.cwd(),
+  '/app',
+  '/'
+].find((candidate) => (
+  existsSync(path.join(candidate, 'docker-compose.yml'))
+  && existsSync(path.join(candidate, 'README.md'))
+  && existsSync(path.join(candidate, 'scripts', 'bootstrap-local-dev.mjs'))
+));
+
+if (!repoRoot) {
+  throw new Error('Unable to resolve OmniStock repo root for config security tests');
+}
 
 describe('deployment config hardening', () => {
   it('fails fast when required secrets are absent', () => {
@@ -39,7 +54,8 @@ describe('deployment config hardening', () => {
   });
 
   it('local bootstrap helper generates non-static secrets and explicit dev-safe flags', async () => {
-    const { buildLocalDevelopmentEnv } = await import('../../../scripts/bootstrap-local-dev.mjs');
+    const bootstrapHelperUrl = pathToFileURL(path.join(repoRoot, 'scripts', 'bootstrap-local-dev.mjs')).href;
+    const { buildLocalDevelopmentEnv } = await import(bootstrapHelperUrl);
     const first = buildLocalDevelopmentEnv({
       rootEnvPath: path.join(repoRoot, '.tmp', 'missing-root.env'),
       rootEnvExamplePath: path.join(repoRoot, '.env.example'),

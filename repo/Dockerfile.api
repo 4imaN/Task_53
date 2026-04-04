@@ -16,6 +16,10 @@ COPY apps/api/package*.json ./
 COPY apps/api/src ./src
 COPY apps/api/scripts ./scripts
 COPY apps/api/test ./test
+COPY scripts/bootstrap-local-dev.mjs ./scripts/bootstrap-local-dev.mjs
+COPY docker-compose.yml ./docker-compose.yml
+COPY README.md ./README.md
+COPY .env.example ./.env.example
 COPY scripts/wait-for-postgres.sh /usr/local/bin/wait-for-postgres.sh
 RUN chmod +x /usr/local/bin/wait-for-postgres.sh /app/scripts/docker-entrypoint.sh && mkdir -p /data/uploads
 CMD ["sh", "/app/scripts/docker-entrypoint.sh"]
