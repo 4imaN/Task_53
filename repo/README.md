@@ -261,8 +261,6 @@ The encryption coverage proves all of the following:
 
 - `apps/api`: Fastify REST API, migrations, services, and tests
 - `apps/web`: Angular standalone-component app shell
-- `docs/design.md`: architecture and security notes
-- `docs/api-spec.md`: route inventory for the current API slice
 - `run_tests.sh`: minimal test entrypoint
 
 ## Test Commands
