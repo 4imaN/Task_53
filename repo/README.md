@@ -33,34 +33,29 @@ Offline warehouse and catalog management system for district-scale operations ru
 
 ## Quick start
 
-1. Generate local secrets and local-only startup flags:
-   `node scripts/bootstrap-local-dev.mjs`
-2. Start the stack:
+1. Start the stack:
    `docker compose up --build`
-3. Open the frontend:
+2. Open the frontend:
    `http://localhost`
-4. Authenticated API health check:
+3. Authenticated API health check:
    first obtain a token from `/api/auth/login`, then call `GET /api/health` with `Authorization: Bearer <token>`
 
-The helper writes both:
-- `./.env` for Docker Compose
-- `apps/api/.env.local` for non-Docker API commands
+`docker compose up` is self-contained: it creates runtime secrets automatically through `omnistock-secrets-init` and stores them in the named volume `runtime-secrets`.
+No checked-in static fallback secrets are used.
+If you are switching from an older local setup and see database authentication errors, reset local state once with:
+`docker compose down -v --remove-orphans`
 
-It generates fresh values for:
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET`
-- `ENCRYPTION_KEY`
-- `DEFAULT_ADMIN_PASSWORD`
-
-It also enables explicit local-only flags such as `APP_ENV=development` and `ALLOW_INSECURE_DEV_COOKIES=1` so HTTP localhost development remains usable without weakening production defaults.
-
-`docker compose up` now fails fast if required secrets are absent. There are no shipped fallback values for JWT, encryption, or bootstrap credentials anymore.
+Optional local helper for non-Docker commands:
+- `node scripts/bootstrap-local-dev.mjs`
+- writes `./.env` and `apps/api/.env.local`
+- useful when running API scripts directly on the host instead of inside compose
 
 For production or on-prem deployment:
 - provide organization-managed secrets explicitly
 - remove `ALLOW_INSECURE_DEV_COOKIES`
 - set `TRUST_PROXY` deliberately for your real reverse-proxy topology
 - do not reuse the helper-generated local `.env` as a deployment secret source
+- replace the local compose-generated runtime secrets with managed secret injection
 
 ## Frontend development without Docker
 

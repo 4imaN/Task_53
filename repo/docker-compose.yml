@@ -1,11 +1,31 @@
+name: omnistock
+
 services:
+  omnistock-secrets-init:
+    image: node:20-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
+      OMNISTOCK_SECRET_DIR: /run/omnistock-secrets
+    command: ["node", "/usr/local/bin/docker-compose-init-secrets.mjs"]
+    volumes:
+      - runtime-secrets:/run/omnistock-secrets
+      - ./scripts/docker-compose-init-secrets.mjs:/usr/local/bin/docker-compose-init-secrets.mjs:ro
+    networks:
+      - omnistock
+    restart: "no"
+
   omnistock-db:
     image: postgres:16-alpine
-    container_name: omnistock-db
+    depends_on:
+      omnistock-secrets-init:
+        condition: service_completed_successfully
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-omnistock}
       POSTGRES_USER: ${POSTGRES_USER:-omnistock}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run `node scripts/bootstrap-local-dev.mjs` or set POSTGRES_PASSWORD explicitly}
+      POSTGRES_PASSWORD_FILE: /run/omnistock-secrets/postgres_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnistock} -d ${POSTGRES_DB:-omnistock}"]
       interval: 10s
@@ -13,6 +33,7 @@ services:
       retries: 10
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - runtime-secrets:/run/omnistock-secrets:ro
     networks:
       - omnistock
 
@@ -20,12 +41,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: omnistock-api
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Run `node scripts/bootstrap-local-dev.mjs` or set DATABASE_URL explicitly}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_DB: ${POSTGRES_DB:-omnistock}
+      POSTGRES_USER: ${POSTGRES_USER:-omnistock}
+      POSTGRES_HOST: omnistock-db
+      POSTGRES_PORT: "5432"
       APP_ENV: ${APP_ENV:-production}
       TRUST_PROXY: ${TRUST_PROXY:-1}
-      JWT_SECRET: ${JWT_SECRET:?Run `node scripts/bootstrap-local-dev.mjs` or set JWT_SECRET explicitly}
+      JWT_SECRET: ${JWT_SECRET:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
       SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-120}
       ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-19456}
@@ -38,19 +62,23 @@ services:
       LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
       UPLOAD_ROOT: ${UPLOAD_ROOT:-/data/uploads}
       UPLOAD_QUOTA_GB: ${UPLOAD_QUOTA_GB:-50}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Run `node scripts/bootstrap-local-dev.mjs` or set ENCRYPTION_KEY explicitly}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
-      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?Run `node scripts/bootstrap-local-dev.mjs` or set DEFAULT_ADMIN_PASSWORD explicitly}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
       SEED_DEMO_USERS: ${SEED_DEMO_USERS:-0}
       ALLOW_INSECURE_DEV_COOKIES: ${ALLOW_INSECURE_DEV_COOKIES:-0}
       ALLOW_DEV_RATE_LIMIT_LOCALHOST_BYPASS: ${ALLOW_DEV_RATE_LIMIT_LOCALHOST_BYPASS:-0}
       INTEGRATION_RATE_LIMIT: ${INTEGRATION_RATE_LIMIT:-120}
       APP_PORT: ${APP_PORT:-3000}
+      OMNISTOCK_SECRET_DIR: /run/omnistock-secrets
     depends_on:
+      omnistock-secrets-init:
+        condition: service_completed_successfully
       omnistock-db:
         condition: service_healthy
     volumes:
       - uploads:/data/uploads
+      - runtime-secrets:/run/omnistock-secrets:ro
     expose:
       - "3000"
     networks:
@@ -60,7 +88,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: omnistock-frontend
     depends_on:
       - omnistock-api
     ports:
@@ -71,6 +98,7 @@ services:
 volumes:
   postgres-data:
   uploads:
+  runtime-secrets:
 
 networks:
   omnistock:
