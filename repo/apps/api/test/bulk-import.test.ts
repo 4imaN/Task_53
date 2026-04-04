@@ -3,16 +3,28 @@ import { BulkImportService } from '../src/services/bulk-import.service.js';
 
 const createService = () => {
   const query = vi.fn(async (sql: string) => {
-    if (sql.includes('FROM departments')) {
+    if (sql.includes('SELECT code') && sql.includes('FROM departments')) {
       return { rows: [{ code: 'SCH-OPS' }] };
     }
 
     if (sql.includes('FROM items')) {
-      return { rows: [{ sku: 'SKU-1001' }] };
+      return {
+        rows: [{
+          value: 'SKU-1001',
+          department_id: 'dept-1',
+          department_code: 'SCH-OPS'
+        }]
+      };
     }
 
     if (sql.includes('FROM barcodes')) {
-      return { rows: [{ barcode: '123456789012' }] };
+      return {
+        rows: [{
+          value: '123456789012',
+          department_id: 'dept-1',
+          department_code: 'SCH-OPS'
+        }]
+      };
     }
 
     return { rows: [] };
@@ -41,8 +53,8 @@ describe('BulkImportService.precheckCatalogItems', () => {
     });
 
     expect(result.summary.errorRows).toBe(1);
-    expect(result.rows[0].message).toContain('Duplicate SKU');
-    expect(result.rows[0].message).toContain('Duplicate barcode');
+    expect(result.rows[0].message).toContain('SKU conflicts with an existing catalog record');
+    expect(result.rows[0].message).toContain('BARCODE conflicts with an existing catalog record');
     expect(result.rows[0].message).toContain('Invalid unit of measure');
   });
 
@@ -61,5 +73,32 @@ describe('BulkImportService.precheckCatalogItems', () => {
     expect(result.summary.warningRows).toBe(1);
     expect(result.rows[0].outcome).toBe('warning');
     expect(result.rows[0].message).toContain('Description is blank');
+  });
+});
+
+describe('BulkImportService.exportCatalogItems', () => {
+  it('normalizes legacy stored temperature aliases to canonical values in exports', async () => {
+    const query = vi.fn(async () => ({
+      rows: [{
+        department_code: 'SCH-OPS',
+        sku: 'SKU-COLD-1',
+        name: 'Legacy Cold Item',
+        description: 'Legacy data row',
+        unit_of_measure: 'each',
+        temperature_band: 'cold',
+        barcode: '998877665544',
+        weight_lbs: '1.00',
+        length_in: '1.00',
+        width_in: '1.00',
+        height_in: '1.00'
+      }]
+    }));
+    const service = new BulkImportService({ db: { query } } as any);
+
+    const result = await service.exportCatalogItems('csv');
+    const lines = String(result.body).trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"chilled"');
+    expect(lines[1]).not.toContain('"cold"');
   });
 });

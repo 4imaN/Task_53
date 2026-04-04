@@ -99,6 +99,11 @@ export class SessionStore {
     return roles.some((role) => assignedRoles.includes(role));
   }
 
+  hasAnyPermission(permissionCodes: readonly string[]): boolean {
+    const assignedPermissions = this.userSignal()?.permissionCodes ?? [];
+    return permissionCodes.some((permissionCode) => assignedPermissions.includes(permissionCode));
+  }
+
   homeUrl(): string {
     const user = this.userSignal();
     return user ? resolveHomeUrl(user.roleCodes) : DEFAULT_LOGIN_URL;
@@ -107,8 +112,8 @@ export class SessionStore {
   private async hydrateInternal(): Promise<void> {
     this.loadingSignal.set(true);
     try {
-      const response = await this.api.me();
-      this.userSignal.set(this.toSessionUser(response));
+      const response = await this.api.rotateSession();
+      this.userSignal.set(this.toSessionUser(response.user));
       this.errorSignal.set(null);
     } catch {
       this.userSignal.set(null);

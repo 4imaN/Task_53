@@ -1,10 +1,11 @@
-import argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { assertPasswordNotReused, PASSWORD_REUSE_MESSAGE } from '../utils/password-history.js';
-import { validatePasswordComplexity } from '../utils/password-policy.js';
+import { assertPasswordComplexity, hashPassword, PasswordPolicyError } from '../utils/password-policy.js';
+import { withTransaction } from '../utils/db.js';
 import { CaptchaService } from './captcha.service.js';
+import argon2 from 'argon2';
 
 type LoginInput = {
   username: string;
@@ -52,6 +53,23 @@ type AuthFailureDetails = {
   lockedUntil?: string | null;
 };
 
+type SessionIdentity = {
+  username: string;
+  roleCodes: string[];
+  permissionCodes: string[];
+  assignedWarehouseIds: string[];
+  departmentIds: string[];
+};
+
+type SessionUserSnapshot = {
+  id: string;
+  username: string;
+  display_name: string;
+  authz_version: number;
+};
+
+type Queryable = Pick<FastifyInstance['db'], 'query'>;
+
 const actorRoleMap: Record<NonNullable<LoginInput['loginActor']>, string> = {
   administrator: 'administrator',
   manager: 'manager',
@@ -71,11 +89,10 @@ export class AuthService {
     return this.captchaService.create(username);
   }
 
-  async getLoginHints(username: string): Promise<{ captchaRequired: boolean; lockedUntil: string | null }> {
-    const user = await this.fetchUserByUsername(username);
+  async getLoginHints(_username: string): Promise<{ captchaRequired: boolean; lockedUntil: string | null }> {
     return {
-      captchaRequired: Boolean(user && user.failed_login_count >= config.captchaFailureThreshold),
-      lockedUntil: user?.locked_until ?? null
+      captchaRequired: false,
+      lockedUntil: null
     };
   }
 
@@ -131,9 +148,8 @@ export class AuthService {
     const sessionId = randomUUID();
     const expiresAt = new Date(Date.now() + config.sessionTtlHours * 60 * 60 * 1000);
 
-    await this.fastify.db.query('BEGIN');
-    try {
-      await this.fastify.db.query(
+    await withTransaction(this.fastify.db, async (client) => {
+      await client.query(
         `
           UPDATE users
           SET failed_login_count = 0, locked_until = NULL, updated_at = NOW()
@@ -142,35 +158,23 @@ export class AuthService {
         [user.id]
       );
 
-      await this.fastify.db.query(
+      await client.query(
         `
           INSERT INTO sessions (user_id, token_id, expires_at, last_seen_at, rotation_reason, user_agent, ip_address)
-          VALUES ($1, $2, $3, NOW(), 'login', $4, $5)
+          VALUES ($1, $2, $3, NOW(), $4, $5, $6)
         `,
-        [user.id, sessionId, expiresAt.toISOString(), input.userAgent ?? null, input.ipAddress ?? null]
+        [user.id, sessionId, expiresAt.toISOString(), 'login', input.userAgent ?? null, input.ipAddress ?? null]
       );
-
-      await this.fastify.db.query('COMMIT');
-    } catch (error) {
-      await this.fastify.db.query('ROLLBACK');
-      throw error;
-    }
-
-    const payload: SessionPayload = {
-      sub: user.id,
-      sid: sessionId,
-      authzVersion: user.authz_version,
-      username: user.username,
-      displayName: user.display_name,
-      roleCodes: identity.roleCodes,
-      permissionCodes: identity.permissionCodes,
-      assignedWarehouseIds: identity.assignedWarehouseIds,
-      departmentIds: identity.departmentIds
-    };
-
-    const token = await this.fastify.jwt.sign(payload, {
-      expiresIn: `${config.sessionTtlHours}h`
     });
+
+    const payload = this.buildSessionPayload({
+      id: user.id,
+      username: user.username,
+      display_name: user.display_name,
+      authz_version: user.authz_version
+    }, identity, sessionId);
+
+    const token = await this.signSessionPayload(payload);
 
     await this.fastify.writeAudit({
       userId: user.id,
@@ -184,12 +188,80 @@ export class AuthService {
     return { token, user: payload };
   }
 
+  async rotateSession(input: {
+    sessionId: string;
+    userId: string;
+    authzVersion: number;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<{ token: string; user: SessionPayload }> {
+    const nextSessionId = randomUUID();
+    const expiresAt = new Date(Date.now() + config.sessionTtlHours * 60 * 60 * 1000);
+
+    const { user, identity } = await withTransaction(this.fastify.db, async (client) => {
+      const currentSessionResult = await client.query<SessionUserSnapshot>(
+        `
+          UPDATE sessions s
+          SET revoked_at = NOW(),
+              rotation_reason = 'session_rotation'
+          FROM users u
+          WHERE s.token_id = $1
+            AND s.user_id = $2
+            AND s.user_id = u.id
+            AND s.revoked_at IS NULL
+            AND s.expires_at > NOW()
+            AND u.deleted_at IS NULL
+            AND u.is_active = TRUE
+            AND u.authz_version = $3
+          RETURNING u.id, u.username, u.display_name, u.authz_version
+        `,
+        [input.sessionId, input.userId, input.authzVersion]
+      );
+
+      if (!currentSessionResult.rowCount) {
+        throw this.authError('Session expired or revoked', 401);
+      }
+
+      const user = currentSessionResult.rows[0];
+      const identity = await this.buildIdentity(user.id, user.username, client);
+
+      await this.createSessionRecord(client, {
+        userId: user.id,
+        sessionId: nextSessionId,
+        expiresAt,
+        rotationReason: 'session_rotation',
+        userAgent: input.userAgent,
+        ipAddress: input.ipAddress
+      });
+
+      return { user, identity };
+    });
+
+    const payload = this.buildSessionPayload(user, identity, nextSessionId);
+    const token = await this.signSessionPayload(payload);
+
+    await this.fastify.writeAudit({
+      userId: user.id,
+      actionType: 'session_rotate',
+      resourceType: 'session',
+      resourceId: nextSessionId,
+      details: {
+        previousSessionId: input.sessionId
+      },
+      ipAddress: input.ipAddress
+    });
+
+    return { token, user: payload };
+  }
+
   async listSessions(userId: string) {
     const result = await this.fastify.db.query(
       `
         SELECT id, token_id, created_at, expires_at, last_seen_at, revoked_at, rotation_reason, user_agent, ip_address
         FROM sessions
         WHERE user_id = $1
+          AND revoked_at IS NULL
+          AND expires_at > NOW()
         ORDER BY created_at DESC
       `,
       [userId]
@@ -303,9 +375,14 @@ export class AuthService {
       throw this.authError('Current password is incorrect', 401);
     }
 
-    const complexityErrors = validatePasswordComplexity(input.newPassword);
-    if (complexityErrors.length) {
-      throw this.authError(complexityErrors.join(' '), 422);
+    try {
+      assertPasswordComplexity(input.newPassword);
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) {
+        throw this.authError(error.message, error.statusCode);
+      }
+
+      throw error;
     }
 
     try {
@@ -320,12 +397,7 @@ export class AuthService {
       throw this.authError(message, 422);
     }
 
-    const newHash = await argon2.hash(input.newPassword, {
-      type: argon2.argon2id,
-      memoryCost: config.argon2MemoryCost,
-      timeCost: config.argon2TimeCost,
-      parallelism: config.argon2Parallelism
-    });
+    const newHash = await hashPassword(input.newPassword);
 
     const nextHistory = [user.password_hash, ...(user.password_history ?? [])].slice(0, config.passwordHistoryDepth);
 
@@ -488,8 +560,8 @@ export class AuthService {
     return error;
   }
 
-  private async buildIdentity(userId: string, username: string) {
-    const permissionResult = await this.fastify.db.query<{
+  private async buildIdentity(userId: string, username: string, client: Queryable = this.fastify.db): Promise<SessionIdentity> {
+    const permissionResult = await client.query<{
       role_code: string;
       permission_code: string;
     }>(
@@ -504,7 +576,7 @@ export class AuthService {
       [userId]
     );
 
-    const warehouseRuleResult = await this.fastify.db.query<{ resource_id: string }>(
+    const warehouseRuleResult = await client.query<{ resource_id: string }>(
       `
         SELECT resource_id
         FROM attribute_rules
@@ -513,7 +585,7 @@ export class AuthService {
       [userId]
     );
 
-    const departmentRuleResult = await this.fastify.db.query<{ resource_id: string }>(
+    const departmentRuleResult = await client.query<{ resource_id: string }>(
       `
         SELECT resource_id
         FROM attribute_rules
@@ -532,5 +604,49 @@ export class AuthService {
       assignedWarehouseIds: warehouseRuleResult.rows.map((row) => row.resource_id),
       departmentIds: departmentRuleResult.rows.map((row) => row.resource_id)
     };
+  }
+
+  private async createSessionRecord(client: Queryable, input: {
+    userId: string;
+    sessionId: string;
+    expiresAt: Date;
+    rotationReason: string;
+    userAgent?: string;
+    ipAddress?: string;
+  }) {
+    await client.query(
+      `
+        INSERT INTO sessions (user_id, token_id, expires_at, last_seen_at, rotation_reason, user_agent, ip_address)
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+      `,
+      [
+        input.userId,
+        input.sessionId,
+        input.expiresAt.toISOString(),
+        input.rotationReason,
+        input.userAgent ?? null,
+        input.ipAddress ?? null
+      ]
+    );
+  }
+
+  private buildSessionPayload(user: SessionUserSnapshot, identity: SessionIdentity, sessionId: string): SessionPayload {
+    return {
+      sub: user.id,
+      sid: sessionId,
+      authzVersion: user.authz_version,
+      username: user.username,
+      displayName: user.display_name,
+      roleCodes: identity.roleCodes,
+      permissionCodes: identity.permissionCodes,
+      assignedWarehouseIds: identity.assignedWarehouseIds,
+      departmentIds: identity.departmentIds
+    };
+  }
+
+  private signSessionPayload(payload: SessionPayload) {
+    return this.fastify.jwt.sign(payload, {
+      expiresIn: `${config.sessionTtlHours}h`
+    });
   }
 }

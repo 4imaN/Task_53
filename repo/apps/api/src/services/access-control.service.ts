@@ -3,8 +3,32 @@ import type { AuthenticatedUser } from '../types/fastify.js';
 
 const GLOBAL_WAREHOUSE_ROLES = new Set(['administrator', 'manager']);
 const GLOBAL_DEPARTMENT_ROLES = new Set(['administrator', 'manager']);
+const WAREHOUSE_SCOPED_SEARCH_ROLES = new Set(['warehouse_clerk']);
+const DEPARTMENT_SCOPED_SEARCH_ROLES = new Set(['moderator', 'catalog_editor']);
 
 const accessError = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
+
+export type SearchAccessScope = {
+  global: boolean;
+  warehouseIds: string[];
+  departmentIds: string[];
+};
+
+export const validateRoleScopeAssignments = (input: {
+  roleCodes: string[];
+  warehouseIds: string[];
+  departmentIds: string[];
+}) => {
+  const hasWarehouseScopedRole = input.roleCodes.some((role) => WAREHOUSE_SCOPED_SEARCH_ROLES.has(role));
+  if (hasWarehouseScopedRole && !input.warehouseIds.length) {
+    throw accessError(422, 'Warehouse-scoped roles must be assigned at least one warehouse');
+  }
+
+  const hasDepartmentScopedRole = input.roleCodes.some((role) => DEPARTMENT_SCOPED_SEARCH_ROLES.has(role));
+  if (hasDepartmentScopedRole && !input.departmentIds.length && !input.warehouseIds.length) {
+    throw accessError(422, 'Moderator and catalog roles must be assigned at least one department or warehouse-backed department scope');
+  }
+};
 
 export class AccessControlService {
   constructor(private readonly fastify: FastifyInstance) {}
@@ -47,6 +71,30 @@ export class AccessControlService {
     return Array.from(departmentIds);
   }
 
+  async getSearchScope(user: AuthenticatedUser): Promise<SearchAccessScope> {
+    if (user.roleCodes.some((role) => GLOBAL_WAREHOUSE_ROLES.has(role) || GLOBAL_DEPARTMENT_ROLES.has(role))) {
+      return {
+        global: true,
+        warehouseIds: [],
+        departmentIds: []
+      };
+    }
+
+    const warehouseIds = user.roleCodes.some((role) => WAREHOUSE_SCOPED_SEARCH_ROLES.has(role))
+      ? [...new Set(user.assignedWarehouseIds.map((warehouseId) => String(warehouseId).trim()).filter(Boolean))]
+      : [];
+
+    const departmentIds = user.roleCodes.some((role) => DEPARTMENT_SCOPED_SEARCH_ROLES.has(role))
+      ? (await this.getAllowedDepartmentIds(user) ?? [])
+      : [];
+
+    return {
+      global: false,
+      warehouseIds,
+      departmentIds: [...new Set(departmentIds.map((departmentId) => String(departmentId).trim()).filter(Boolean))]
+    };
+  }
+
   ensureDepartmentAccess(user: AuthenticatedUser, departmentId: string, message = 'Department is outside your assigned scope') {
     if (this.hasGlobalDepartmentAccess(user)) {
       return;
@@ -69,10 +117,31 @@ export class AccessControlService {
     return user.assignedWarehouseIds.includes(warehouseId);
   }
 
-  ensureWarehouseAccess(user: AuthenticatedUser, warehouseId: string, message = 'Warehouse is outside your assigned scope') {
-    if (!this.canAccessWarehouse(user, warehouseId)) {
+  async getWarehouseScopeForWarehouse(warehouseId: string) {
+    const result = await this.fastify.db.query<{ id: string }>(
+      `
+        SELECT id::text
+        FROM warehouses
+        WHERE id = $1
+          AND deleted_at IS NULL
+      `,
+      [warehouseId]
+    );
+
+    if (!result.rowCount) {
+      throw accessError(404, 'Warehouse not found');
+    }
+
+    return result.rows[0].id;
+  }
+
+  async ensureWarehouseAccess(user: AuthenticatedUser, warehouseId: string, message = 'Warehouse is outside your assigned scope') {
+    const resolvedWarehouseId = await this.getWarehouseScopeForWarehouse(warehouseId);
+    if (!this.canAccessWarehouse(user, resolvedWarehouseId)) {
       throw accessError(403, message);
     }
+
+    return resolvedWarehouseId;
   }
 
   async getWarehouseScopeForBin(binId: string) {
@@ -96,7 +165,7 @@ export class AccessControlService {
 
   async ensureBinAccess(user: AuthenticatedUser, binId: string, message = 'Bin is outside your assigned warehouse scope') {
     const warehouseId = await this.getWarehouseScopeForBin(binId);
-    this.ensureWarehouseAccess(user, warehouseId, message);
+    await this.ensureWarehouseAccess(user, warehouseId, message);
     return warehouseId;
   }
 
@@ -120,7 +189,7 @@ export class AccessControlService {
 
   async ensureDocumentAccess(user: AuthenticatedUser, documentId: string, message = 'Document is outside your warehouse scope') {
     const warehouseId = await this.getWarehouseScopeForDocument(documentId);
-    this.ensureWarehouseAccess(user, warehouseId, message);
+    await this.ensureWarehouseAccess(user, warehouseId, message);
     return warehouseId;
   }
 
@@ -143,6 +212,7 @@ export class AccessControlService {
   }
 
   async ensureItemAccess(user: AuthenticatedUser, itemId: string, message = 'Item is outside your department scope') {
+    const departmentId = await this.getDepartmentScopeForItem(itemId);
     if (this.hasGlobalDepartmentAccess(user)) {
       return;
     }
@@ -152,17 +222,12 @@ export class AccessControlService {
       throw accessError(403, message);
     }
 
-    const departmentId = await this.getDepartmentScopeForItem(itemId);
     if (!allowedDepartmentIds.includes(departmentId)) {
       throw accessError(403, message);
     }
   }
 
   async ensureReviewAccess(user: AuthenticatedUser, reviewId: string, message = 'Review is outside your department scope') {
-    if (this.hasGlobalDepartmentAccess(user)) {
-      return;
-    }
-
     const reviewResult = await this.fastify.db.query<{ department_id: string }>(
       `
         SELECT i.department_id::text AS department_id
@@ -178,6 +243,10 @@ export class AccessControlService {
       throw accessError(404, 'Review not found');
     }
 
+    if (this.hasGlobalDepartmentAccess(user)) {
+      return;
+    }
+
     const allowedDepartmentIds = await this.getAllowedDepartmentIds(user);
     if (!allowedDepartmentIds?.includes(reviewResult.rows[0].department_id)) {
       throw accessError(403, message);
@@ -185,10 +254,6 @@ export class AccessControlService {
   }
 
   async ensureQuestionAccess(user: AuthenticatedUser, questionId: string, message = 'Question is outside your department scope') {
-    if (this.hasGlobalDepartmentAccess(user)) {
-      return;
-    }
-
     const questionResult = await this.fastify.db.query<{ department_id: string }>(
       `
         SELECT i.department_id::text AS department_id
@@ -204,6 +269,10 @@ export class AccessControlService {
       throw accessError(404, 'Question not found');
     }
 
+    if (this.hasGlobalDepartmentAccess(user)) {
+      return;
+    }
+
     const allowedDepartmentIds = await this.getAllowedDepartmentIds(user);
     if (!allowedDepartmentIds?.includes(questionResult.rows[0].department_id)) {
       throw accessError(403, message);
@@ -211,10 +280,6 @@ export class AccessControlService {
   }
 
   async ensureReviewImageAccess(user: AuthenticatedUser, imageId: string, message = 'Image is outside your department scope') {
-    if (this.hasGlobalDepartmentAccess(user)) {
-      return;
-    }
-
     const imageResult = await this.fastify.db.query<{ department_id: string }>(
       `
         SELECT i.department_id::text AS department_id
@@ -229,6 +294,10 @@ export class AccessControlService {
 
     if (!imageResult.rowCount) {
       throw accessError(404, 'Image not found');
+    }
+
+    if (this.hasGlobalDepartmentAccess(user)) {
+      return;
     }
 
     const allowedDepartmentIds = await this.getAllowedDepartmentIds(user);

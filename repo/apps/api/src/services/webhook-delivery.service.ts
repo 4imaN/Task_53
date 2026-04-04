@@ -11,6 +11,38 @@ type IntegrationWebhookClient = {
   webhook_url?: string | null;
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const SAFE_SUMMARY_SCALAR_KEYS = new Set(['departmentCode', 'warehouseId', 'documentId', 'eventVersion']);
+
+export const summarizeWebhookPayloadForStorage = (payload: Record<string, unknown>) => {
+  const topLevelKeys = Object.keys(payload).sort();
+  const scalarFields = Object.fromEntries(
+    Object.entries(payload).filter(([key, value]) =>
+      SAFE_SUMMARY_SCALAR_KEYS.has(key)
+      && (
+        typeof value === 'string'
+        || typeof value === 'number'
+        || typeof value === 'boolean'
+        || value === null
+      )
+    )
+  );
+  const collectionCounts = Object.fromEntries(
+    Object.entries(payload)
+      .filter((entry): entry is [string, unknown[]] => Array.isArray(entry[1]))
+      .map(([key, value]) => [key, value.length])
+  );
+
+  return {
+    kind: 'summary',
+    topLevelKeys,
+    scalarFields,
+    collectionCounts,
+    hasNestedObjects: Object.values(payload).some((value) => isPlainObject(value))
+  };
+};
+
 export class WebhookDeliveryService {
   constructor(
     private readonly fastify: FastifyInstance,
@@ -22,10 +54,11 @@ export class WebhookDeliveryService {
     if (!client.webhook_url) {
       return null;
     }
+    const storedPayload = summarizeWebhookPayloadForStorage(payload);
 
     let targetUrl: string;
     try {
-      targetUrl = validateInternalWebhookUrl(client.webhook_url);
+      targetUrl = await this.validateTargetUrl(client.webhook_url);
     } catch (error) {
       const deliveryResult = await this.fastify.db.query<{ id: string }>(
         `
@@ -33,7 +66,7 @@ export class WebhookDeliveryService {
           VALUES ($1, $2, $3::jsonb, $4, 'blocked', 0, NOW())
           RETURNING id
         `,
-        [client.id, eventType, JSON.stringify(payload), client.webhook_url]
+        [client.id, eventType, JSON.stringify(storedPayload), client.webhook_url]
       );
 
       await this.fastify.writeAudit({
@@ -58,7 +91,7 @@ export class WebhookDeliveryService {
         VALUES ($1, $2, $3::jsonb, $4, 'pending')
         RETURNING id
       `,
-      [client.id, eventType, JSON.stringify(payload), targetUrl]
+      [client.id, eventType, JSON.stringify(storedPayload), targetUrl]
     );
     const deliveryId = deliveryResult.rows[0].id;
 
@@ -67,7 +100,7 @@ export class WebhookDeliveryService {
         await delay(this.retryBackoffMs[attempt - 1]);
       }
 
-      const response = await this.sendAttempt(client, eventType, payload);
+      const response = await this.sendAttempt(client, targetUrl, eventType, payload);
       const finalAttempt = attempt === this.retryBackoffMs.length;
       const delivered = response.ok;
       const deliveryStatus = delivered ? 'delivered' : finalAttempt ? 'failed' : 'retrying';
@@ -107,7 +140,20 @@ export class WebhookDeliveryService {
     return { deliveryId, status: 'failed' };
   }
 
-  private async sendAttempt(client: IntegrationWebhookClient, eventType: string, payload: Record<string, unknown>) {
+  private async validateTargetUrl(rawUrl: string) {
+    return validateInternalWebhookUrl(rawUrl, {
+      allowedHostnames: config.webhookAllowedHostnames,
+      allowedDomainSuffixes: config.webhookAllowedDomainSuffixes,
+      allowLoopback: config.allowDevWebhookLoopback
+    });
+  }
+
+  private async sendAttempt(
+    client: IntegrationWebhookClient,
+    targetUrl: string,
+    eventType: string,
+    payload: Record<string, unknown>
+  ) {
     const timestamp = String(Date.now());
     const body = JSON.stringify(payload);
     const signature = signPayload(`${timestamp}.${body}`, client.hmac_secret);
@@ -115,7 +161,8 @@ export class WebhookDeliveryService {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(validateInternalWebhookUrl(client.webhook_url!), {
+      const verifiedTargetUrl = await this.validateTargetUrl(targetUrl);
+      const response = await fetch(verifiedTargetUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

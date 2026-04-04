@@ -14,9 +14,12 @@ VALUES
   ('warehouses.read', 'Read warehouse hierarchy and details'),
   ('warehouses.manage', 'Create and update warehouse, zone, and bin records'),
   ('bins.toggle', 'Enable or disable bins'),
+  ('inventory.scan', 'Lookup inventory by barcode, lot, or SKU'),
   ('inventory.receive', 'Receive inventory'),
   ('inventory.move', 'Move inventory between bins'),
   ('inventory.pick', 'Pick inventory for outbound flows'),
+  ('inventory.count', 'Create cycle count documents'),
+  ('inventory.adjust', 'Create inventory adjustment documents'),
   ('documents.approve', 'Approve warehouse documents'),
   ('catalog.manage', 'Maintain item details, answers, and catalog media'),
   ('content.moderate', 'Moderate reports and user-generated content'),
@@ -34,10 +37,10 @@ WITH mapping AS (
   FROM roles r
   JOIN permissions p ON (
     (r.code = 'administrator') OR
-    (r.code = 'manager' AND p.code IN ('warehouses.read','warehouses.manage','bins.toggle','inventory.receive','inventory.move','inventory.pick','documents.approve','metrics.read','search.read','saved_views.manage','exports.manage','images.export','audit.read')) OR
+    (r.code = 'manager' AND p.code IN ('warehouses.read','warehouses.manage','bins.toggle','inventory.scan','inventory.receive','inventory.move','inventory.pick','inventory.count','inventory.adjust','documents.approve','metrics.read','search.read','saved_views.manage','exports.manage','images.export','audit.read')) OR
     (r.code = 'moderator' AND p.code IN ('content.moderate','search.read')) OR
     (r.code = 'catalog_editor' AND p.code IN ('catalog.manage','search.read','saved_views.manage','exports.manage','images.export')) OR
-    (r.code = 'warehouse_clerk' AND p.code IN ('warehouses.read','inventory.receive','inventory.move','inventory.pick','search.read','saved_views.manage'))
+    (r.code = 'warehouse_clerk' AND p.code IN ('warehouses.read','inventory.scan','inventory.receive','inventory.move','inventory.pick','inventory.count','inventory.adjust','search.read','saved_views.manage'))
   )
 )
 INSERT INTO role_permissions (role_id, permission_id)
@@ -88,7 +91,7 @@ SELECT data.zone_id, data.code, data.temperature_band, data.max_load_lbs, data.m
 FROM (
   SELECT (SELECT id FROM zone_recv) AS zone_id, 'RECV-A1' AS code, 'ambient' AS temperature_band, 2000::numeric AS max_load_lbs, 60::numeric AS max_length_in, 48::numeric AS max_width_in, 72::numeric AS max_height_in
   UNION ALL
-  SELECT (SELECT id FROM zone_cold), 'COLD-01', 'cold', 800, 48, 40, 72
+  SELECT (SELECT id FROM zone_cold), 'COLD-01', 'chilled', 800, 48, 40, 72
   UNION ALL
   SELECT (SELECT id FROM zone_pick), 'PICK-01', 'ambient', 500, 36, 24, 24
 ) AS data
@@ -105,7 +108,7 @@ LATERAL (
   VALUES
     ('SKU-1001', 'Classroom Paper Towels', 'Bulk paper towels for district facilities', 'case', 22.5, 24, 18, 16, 'ambient', 34.25, 'Facility Supply Co'),
     ('SKU-1002', 'Science Lab Gloves', 'Disposable gloves for chemistry labs', 'box', 4.2, 12, 10, 8, 'ambient', 12.10, 'SafeLab Partners'),
-    ('SKU-2001', 'Nurse Ice Packs', 'Reusable cold packs for school nurse offices', 'case', 18.0, 20, 16, 14, 'cold', 49.95, 'HealthWorks')
+    ('SKU-2001', 'Nurse Ice Packs', 'Reusable cold packs for school nurse offices', 'case', 18.0, 20, 16, 14, 'chilled', 49.95, 'HealthWorks')
 ) AS value(sku, name, description, unit_of_measure, weight_lbs, length_in, width_in, height_in, temperature_band, cost_amount, supplier_name)
 ON CONFLICT (sku) DO NOTHING;
 

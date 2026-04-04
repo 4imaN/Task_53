@@ -1,12 +1,60 @@
 import type { FastifyInstance } from 'fastify';
 import { ModerationService } from '../services/moderation.service.js';
 
+const moderationTargetTypeEnum = ['review', 'qa_thread'] as const;
+const reporterStatusEnum = ['submitted', 'under_review', 'resolved', 'dismissed'] as const;
+const moderationStatusEnum = ['new', 'assigned', 'investigating', 'action_taken', 'no_action', 'escalated', 'closed'] as const;
+
+const createReportBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['targetType', 'targetId', 'reason'],
+  properties: {
+    targetType: { type: 'string', enum: moderationTargetTypeEnum },
+    targetId: { type: 'string', format: 'uuid' },
+    reason: { type: 'string', minLength: 3, maxLength: 2000 }
+  }
+} as const;
+
+const reportIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['reportId'],
+  properties: {
+    reportId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const updateStatusBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['reporterStatus', 'moderationStatus'],
+  properties: {
+    reporterStatus: { type: 'string', enum: reporterStatusEnum },
+    moderationStatus: { type: 'string', enum: moderationStatusEnum },
+    internalNotes: { type: 'string', minLength: 1, maxLength: 4000 }
+  }
+} as const;
+
+const notificationParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['notificationId'],
+  properties: {
+    notificationId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
 export const registerModerationRoutes = async (fastify: FastifyInstance) => {
   const moderationService = new ModerationService(fastify);
 
-  fastify.post('/moderation/reports', { preHandler: fastify.authenticate }, async (request) => {
-    const body = request.body as { targetType: string; targetId: string; reason: string };
-    const report = await moderationService.createReport({
+  fastify.post('/moderation/reports', {
+    preHandler: fastify.authenticate,
+    schema: { body: createReportBodySchema }
+  }, async (request) => {
+    const body = request.body as { targetType: 'review' | 'qa_thread'; targetId: string; reason: string };
+    const result = await moderationService.createReport({
+      user: request.authUser!,
       reporterId: request.authUser!.id,
       targetType: body.targetType,
       targetId: body.targetId,
@@ -14,21 +62,28 @@ export const registerModerationRoutes = async (fastify: FastifyInstance) => {
     });
 
     request.auditContext = {
-      actionType: 'abuse_report_submit',
+      actionType: result.deduplicated ? 'abuse_report_submit_duplicate' : 'abuse_report_submit',
       resourceType: body.targetType,
       resourceId: body.targetId,
-      details: { reportId: report.id }
+      details: {
+        reportId: result.report.id,
+        deduplicated: result.deduplicated
+      }
     };
 
-    return report;
+    return result.report;
   });
 
   fastify.get('/moderation/queue', {
     preHandler: [fastify.authenticate, fastify.requirePermission('content.moderate')]
-  }, async () => moderationService.listQueue());
+  }, async (request) => moderationService.listQueue(request.authUser!));
 
   fastify.post('/moderation/reports/:reportId/status', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('content.moderate')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('content.moderate')],
+    schema: {
+      params: reportIdParamsSchema,
+      body: updateStatusBodySchema
+    }
   }, async (request) => {
     const params = request.params as { reportId: string };
     const body = request.body as {
@@ -36,7 +91,7 @@ export const registerModerationRoutes = async (fastify: FastifyInstance) => {
       moderationStatus: 'new' | 'assigned' | 'investigating' | 'action_taken' | 'no_action' | 'escalated' | 'closed';
       internalNotes?: string;
     };
-    const report = await moderationService.updateStatus({ reportId: params.reportId, ...body });
+    const report = await moderationService.updateStatus({ reportId: params.reportId, actingUser: request.authUser!, ...body });
 
     request.auditContext = {
       actionType: 'moderation_status_update',
@@ -62,7 +117,10 @@ export const registerModerationRoutes = async (fastify: FastifyInstance) => {
     return result.rows;
   });
 
-  fastify.post('/inbox/:notificationId/read', { preHandler: fastify.authenticate }, async (request, reply) => {
+  fastify.post('/inbox/:notificationId/read', {
+    preHandler: fastify.authenticate,
+    schema: { params: notificationParamsSchema }
+  }, async (request, reply) => {
     const { notificationId } = request.params as { notificationId: string };
     const result = await fastify.db.query(
       `

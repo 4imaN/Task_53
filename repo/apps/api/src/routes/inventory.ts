@@ -1,25 +1,70 @@
 import type { FastifyInstance } from 'fastify';
+import { INVENTORY_SCAN_PERMISSION } from '../domain/inventory-permissions.js';
 import { InventoryService } from '../services/inventory.service.js';
 
-const invalidQuantity = () => Object.assign(new Error('Quantity must be greater than zero'), { statusCode: 422 });
+const scanBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['code'],
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 255 }
+  }
+} as const;
+
+const moveBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['lotId', 'sourceBinId', 'targetBinId', 'quantity'],
+  properties: {
+    lotId: { type: 'string', format: 'uuid' },
+    sourceBinId: { type: 'string', format: 'uuid' },
+    targetBinId: { type: 'string', format: 'uuid' },
+    quantity: { type: 'number', exclusiveMinimum: 0 }
+  }
+} as const;
+
+const receiveBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['itemId', 'warehouseId', 'binId', 'lotCode', 'quantity'],
+  properties: {
+    itemId: { type: 'string', format: 'uuid' },
+    warehouseId: { type: 'string', format: 'uuid' },
+    binId: { type: 'string', format: 'uuid' },
+    lotCode: { type: 'string', minLength: 1, maxLength: 80 },
+    quantity: { type: 'number', exclusiveMinimum: 0 },
+    expirationDate: { type: 'string', format: 'date' },
+    documentId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const pickBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['lotId', 'binId', 'quantity'],
+  properties: {
+    lotId: { type: 'string', format: 'uuid' },
+    binId: { type: 'string', format: 'uuid' },
+    quantity: { type: 'number', exclusiveMinimum: 0 }
+  }
+} as const;
 
 export const registerInventoryRoutes = async (fastify: FastifyInstance) => {
   const inventoryService = new InventoryService(fastify);
 
   fastify.post('/inventory/scan', {
-    preHandler: [fastify.authenticate, fastify.requirePermission(['inventory.receive'])]
+    preHandler: [fastify.authenticate, fastify.requirePermission(INVENTORY_SCAN_PERMISSION)],
+    schema: { body: scanBodySchema }
   }, async (request) => {
     const body = request.body as { code: string };
     return inventoryService.lookupScan(body.code, request.authUser!);
   });
 
   fastify.post('/inventory/move', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.move')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.move')],
+    schema: { body: moveBodySchema }
   }, async (request) => {
     const body = request.body as { lotId: string; sourceBinId: string; targetBinId: string; quantity: number };
-    if (!Number.isFinite(Number(body.quantity)) || Number(body.quantity) <= 0) {
-      throw invalidQuantity();
-    }
     await inventoryService.moveInventory({ ...body, user: request.authUser! });
 
     request.auditContext = {
@@ -33,7 +78,8 @@ export const registerInventoryRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/inventory/receive', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.receive')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.receive')],
+    schema: { body: receiveBodySchema }
   }, async (request) => {
     const body = request.body as {
       itemId: string;
@@ -44,9 +90,6 @@ export const registerInventoryRoutes = async (fastify: FastifyInstance) => {
       expirationDate?: string;
       documentId?: string;
     };
-    if (!Number.isFinite(Number(body.quantity)) || Number(body.quantity) <= 0) {
-      throw invalidQuantity();
-    }
     const result = await inventoryService.receiveInventory({ ...body, user: request.authUser! });
 
     request.auditContext = {
@@ -60,12 +103,10 @@ export const registerInventoryRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/inventory/pick', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.pick')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('inventory.pick')],
+    schema: { body: pickBodySchema }
   }, async (request) => {
     const body = request.body as { lotId: string; binId: string; quantity: number };
-    if (!Number.isFinite(Number(body.quantity)) || Number(body.quantity) <= 0) {
-      throw invalidQuantity();
-    }
     await inventoryService.pickInventory({ ...body, user: request.authUser! });
 
     request.auditContext = {

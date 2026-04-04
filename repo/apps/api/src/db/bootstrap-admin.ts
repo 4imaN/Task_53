@@ -1,6 +1,8 @@
-import argon2 from 'argon2';
 import pg from 'pg';
+import { pathToFileURL } from 'node:url';
 import { config } from '../config.js';
+import { assertPasswordComplexity, hashPassword } from '../utils/password-policy.js';
+import { logProcessError } from '../utils/error-logging.js';
 
 const { Pool } = pg;
 
@@ -10,9 +12,12 @@ const permissions = [
   'warehouses.read',
   'warehouses.manage',
   'bins.toggle',
+  'inventory.scan',
   'inventory.receive',
   'inventory.move',
   'inventory.pick',
+  'inventory.count',
+  'inventory.adjust',
   'documents.approve',
   'catalog.manage',
   'content.moderate',
@@ -25,62 +30,75 @@ const permissions = [
   'audit.read'
 ];
 
-const demoUsers = [
+export const seedDemoUsers = [
   {
     username: 'manager.demo',
     displayName: 'Mara Jensen',
     password: 'ManagerDemo!123',
     roleCode: 'manager',
-    assignWarehouse: false
+    warehouseCodes: [] as string[],
+    departmentCodes: [] as string[]
   },
   {
     username: 'moderator.demo',
     displayName: 'Noah Grant',
     password: 'ModeratorDemo!123',
     roleCode: 'moderator',
-    assignWarehouse: false
+    warehouseCodes: [] as string[],
+    departmentCodes: ['district-ops']
   },
   {
     username: 'catalog.demo',
     displayName: 'Elena Park',
     password: 'CatalogDemo!123',
     roleCode: 'catalog_editor',
-    assignWarehouse: false
+    warehouseCodes: [] as string[],
+    departmentCodes: ['district-ops']
   },
   {
     username: 'clerk.demo',
     displayName: 'Luis Romero',
     password: 'ClerkDemo!123',
     roleCode: 'warehouse_clerk',
-    assignWarehouse: true
+    warehouseCodes: ['WH-01'],
+    departmentCodes: [] as string[]
   }
 ] as const;
 
-const run = async (): Promise<void> => {
+export const validateSeedUserPasswords = (
+  users: ReadonlyArray<{ username: string; password: string }>
+) => {
+  for (const user of users) {
+    assertPasswordComplexity(user.password, { subject: `Seeded password for ${user.username}` });
+  }
+};
+
+export const validateBootstrapPasswords = () => {
+  assertPasswordComplexity(config.defaultAdminPassword, { subject: 'Default admin password' });
+
+  if (process.env.SEED_DEMO_USERS === '1') {
+    validateSeedUserPasswords(seedDemoUsers);
+  }
+};
+
+export const bootstrapAdmin = async (): Promise<void> => {
+  validateBootstrapPasswords();
   const pool = new Pool({ connectionString: config.databaseUrl });
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    const warehouseResult = await client.query<{ id: string }>(
-      `SELECT id FROM warehouses ORDER BY created_at ASC LIMIT 1`
-    );
-
     const upsertUser = async (input: {
       username: string;
       displayName: string;
       password: string;
       roleCode: string;
-      assignWarehouse?: boolean;
+      warehouseCodes?: readonly string[];
+      departmentCodes?: readonly string[];
       auditAction: string;
     }) => {
-      const passwordHash = await argon2.hash(input.password, {
-        type: argon2.argon2id,
-        memoryCost: config.argon2MemoryCost,
-        timeCost: config.argon2TimeCost,
-        parallelism: config.argon2Parallelism
-      });
+      const passwordHash = await hashPassword(input.password);
 
       const userResult = await client.query<{ id: string }>(
         `
@@ -113,14 +131,29 @@ const run = async (): Promise<void> => {
         [userId, roleResult.rows[0].id]
       );
 
-      if (input.assignWarehouse && warehouseResult.rowCount) {
+      if (input.warehouseCodes?.length) {
         await client.query(
           `
             INSERT INTO attribute_rules (user_id, resource_type, resource_id, rule_type, metadata)
-            VALUES ($1, 'warehouse', $2, 'access', '{}'::jsonb)
+            SELECT $1, 'warehouse', w.id, 'access', '{}'::jsonb
+            FROM warehouses w
+            WHERE w.code = ANY($2::text[])
             ON CONFLICT (user_id, resource_type, resource_id, rule_type) DO NOTHING
           `,
-          [userId, warehouseResult.rows[0].id]
+          [userId, input.warehouseCodes]
+        );
+      }
+
+      if (input.departmentCodes?.length) {
+        await client.query(
+          `
+            INSERT INTO attribute_rules (user_id, resource_type, resource_id, rule_type, metadata)
+            SELECT $1, 'department', d.id, 'access', '{}'::jsonb
+            FROM departments d
+            WHERE d.code = ANY($2::text[])
+            ON CONFLICT (user_id, resource_type, resource_id, rule_type) DO NOTHING
+          `,
+          [userId, input.departmentCodes]
         );
       }
 
@@ -138,17 +171,20 @@ const run = async (): Promise<void> => {
       displayName: 'Default Administrator',
       password: config.defaultAdminPassword,
       roleCode: 'administrator',
+      warehouseCodes: [],
+      departmentCodes: [],
       auditAction: 'bootstrap_admin'
     });
 
     if (process.env.SEED_DEMO_USERS === '1') {
-      for (const demoUser of demoUsers) {
+      for (const demoUser of seedDemoUsers) {
         await upsertUser({
           username: demoUser.username,
           displayName: demoUser.displayName,
           password: demoUser.password,
           roleCode: demoUser.roleCode,
-          assignWarehouse: demoUser.assignWarehouse,
+          warehouseCodes: demoUser.warehouseCodes,
+          departmentCodes: demoUser.departmentCodes,
           auditAction: 'bootstrap_demo_user'
         });
       }
@@ -157,7 +193,7 @@ const run = async (): Promise<void> => {
     await client.query('COMMIT');
     console.log(`Bootstrap admin ready: ${config.defaultAdminUsername}`);
     if (process.env.SEED_DEMO_USERS === '1') {
-      console.log(`Bootstrap demo users ready: ${demoUsers.map((user) => user.username).join(', ')}`);
+      console.log(`Bootstrap demo users ready: ${seedDemoUsers.map((user) => user.username).join(', ')}`);
     } else {
       console.log('Bootstrap demo users skipped (set SEED_DEMO_USERS=1 to enable)');
     }
@@ -170,7 +206,11 @@ const run = async (): Promise<void> => {
   }
 };
 
-run().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+const isMain = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+
+if (isMain) {
+  bootstrapAdmin().catch((error) => {
+    logProcessError('bootstrap_admin', error);
+    process.exitCode = 1;
+  });
+}

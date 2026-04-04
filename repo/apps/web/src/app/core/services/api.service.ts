@@ -57,6 +57,57 @@ export type AuditEntry = {
   user_id: string | null;
 };
 
+export type InventoryScanItem = {
+  item_id: string;
+  item_name: string;
+  sku: string;
+  barcode: string | null;
+  temperature_band: string;
+  weight_lbs: string;
+  length_in: string;
+  width_in: string;
+  height_in: string;
+};
+
+export type InventoryScanWarehouseOption = {
+  warehouse_id: string;
+  warehouse_name: string;
+};
+
+export type InventoryScanLotMatch = InventoryScanItem & {
+  lot_id: string;
+  lot_code: string;
+  quantity_on_hand: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  bin_id: string;
+  bin_code: string;
+  bin_quantity: string;
+};
+
+export type InventoryScanResult =
+  | {
+    kind: 'no_match';
+    code: string;
+    message: string;
+  }
+  | {
+    kind: 'item_only';
+    code: string;
+    item: InventoryScanItem;
+    receiving_warehouses: InventoryScanWarehouseOption[];
+  }
+  | {
+    kind: 'single_position';
+    code: string;
+    match: InventoryScanLotMatch;
+  }
+  | {
+    kind: 'multiple_positions';
+    code: string;
+    matches: InventoryScanLotMatch[];
+  };
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly http = inject(HttpClient);
@@ -78,6 +129,10 @@ export class ApiService {
 
   me() {
     return firstValueFrom(this.http.get<AuthSession>(`${this.apiBase}/auth/me`, { withCredentials: true }));
+  }
+
+  rotateSession() {
+    return firstValueFrom(this.http.post<{ token: string; user: AuthSession }>(`${this.apiBase}/auth/sessions/rotate`, {}, { withCredentials: true }));
   }
 
   loginHints(username: string) {
@@ -126,7 +181,7 @@ export class ApiService {
   }
 
   warehouseSetupOptions() {
-    return firstValueFrom(this.http.get<{ departments: any[] }>(`${this.apiBase}/warehouse-setup/options`, { withCredentials: true }));
+    return firstValueFrom(this.http.get<{ departments: any[]; temperatureBands: string[] }>(`${this.apiBase}/warehouse-setup/options`, { withCredentials: true }));
   }
 
   warehouses() {
@@ -188,7 +243,7 @@ export class ApiService {
   }
 
   inventoryScan(code: string) {
-    return firstValueFrom(this.http.post<any>(`${this.apiBase}/inventory/scan`, { code }, { withCredentials: true }));
+    return firstValueFrom(this.http.post<InventoryScanResult>(`${this.apiBase}/inventory/scan`, { code }, { withCredentials: true }));
   }
 
   receiveInventory(payload: {

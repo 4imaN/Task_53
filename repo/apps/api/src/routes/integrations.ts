@@ -38,7 +38,7 @@ export const registerIntegrationRoutes = async (fastify: FastifyInstance) => {
     }
 
     try {
-      integrationSecurity.enforceRateLimit(client);
+      await integrationSecurity.enforceRateLimit(client);
       await integrationSecurity.assertNotReplayed(client.id, typeof nonce === 'string' && nonce.trim() ? nonce : signature, requestTimestampMs);
       const scopedDepartments = await integrationSecurity.ensureDepartmentScope(client, request.body ?? {});
 

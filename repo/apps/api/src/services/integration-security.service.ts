@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
+import { withTransaction } from '../utils/db.js';
 
 type IntegrationClient = {
   id: string;
   allowed_departments: string[];
   rate_limit_per_minute: number;
 };
-
-const requestWindows = new Map<string, number[]>();
 
 const integrationError = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
 
@@ -46,17 +45,32 @@ export class IntegrationSecurityService {
     return parsed;
   }
 
-  enforceRateLimit(client: IntegrationClient) {
-    const now = Date.now();
-    const windowStart = now - 60_000;
-    const timestamps = requestWindows.get(client.id)?.filter((timestamp) => timestamp > windowStart) ?? [];
+  async enforceRateLimit(client: IntegrationClient) {
+    await withTransaction(this.fastify.db, async (db) => {
+      await db.query(`SELECT id FROM integration_clients WHERE id = $1 FOR UPDATE`, [client.id]);
+      await db.query(
+        `DELETE FROM integration_rate_limit_events WHERE created_at <= NOW() - INTERVAL '60 seconds'`
+      );
 
-    if (timestamps.length >= client.rate_limit_per_minute) {
-      throw integrationError(429, 'Integration client rate limit exceeded');
-    }
+      const recentResult = await db.query<{ count: string }>(
+        `
+          SELECT COUNT(*)::text AS count
+          FROM integration_rate_limit_events
+          WHERE integration_client_id = $1
+            AND created_at > NOW() - INTERVAL '60 seconds'
+        `,
+        [client.id]
+      );
 
-    timestamps.push(now);
-    requestWindows.set(client.id, timestamps);
+      if (Number(recentResult.rows[0]?.count ?? 0) >= client.rate_limit_per_minute) {
+        throw integrationError(429, 'Integration client rate limit exceeded');
+      }
+
+      await db.query(
+        `INSERT INTO integration_rate_limit_events (integration_client_id) VALUES ($1)`,
+        [client.id]
+      );
+    });
   }
 
   async assertNotReplayed(clientId: string, replayKey: string, timestampMs: number) {

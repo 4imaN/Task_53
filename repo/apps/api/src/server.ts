@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
+import { config } from './config.js';
 import dbPlugin from './plugins/db.js';
 import auditPlugin from './plugins/audit.js';
 import authPlugin from './plugins/auth.js';
@@ -17,30 +18,13 @@ import { registerCatalogRoutes } from './routes/catalog.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerBulkRoutes } from './routes/bulk.js';
-
-const redactSensitiveText = (value: string): string => value
-  .replace(/\bpostgres(?:ql)?:\/\/[^\s)]+/gi, '[REDACTED_DSN]')
-  .replace(/\b[\w.-]*(?:jwt|token|secret|password|encryption[_-]?key|api[_-]?key)[\w.-]*\s*[=:]\s*[^\s,;]+/gi, '[REDACTED_SECRET]')
-  .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED_TOKEN]');
-
-export const sanitizeErrorForLog = (error: unknown): { name: string; message: string; stack?: string } => {
-  if (!(error instanceof Error)) {
-    return {
-      name: 'Error',
-      message: 'Unknown error'
-    };
-  }
-
-  return {
-    name: redactSensitiveText(error.name || 'Error'),
-    message: redactSensitiveText(error.message || 'Internal server error'),
-    stack: typeof error.stack === 'string' ? redactSensitiveText(error.stack) : undefined
-  };
-};
+export { sanitizeErrorForLog } from './utils/error-logging.js';
+import { sanitizeErrorForLog } from './utils/error-logging.js';
 
 export const buildServer = async (options: { logger?: Parameters<typeof Fastify>[0]['logger'] } = {}) => {
   const fastify = Fastify({
     logger: options.logger ?? true,
+    trustProxy: config.trustProxy,
     schemaErrorFormatter: (errors, dataVar) => {
       const validationError = new Error('Validation failed') as Error & {
         code?: string;

@@ -34,6 +34,7 @@ type MockOptions = {
   exportDelayMs?: number;
   importFails?: boolean;
   precheckFails?: boolean;
+  savedViewLimitReached?: boolean;
 };
 
 const encoder = new TextEncoder();
@@ -56,7 +57,17 @@ function buildUser(role: MockRole): MockUser {
       username: 'ops.manager',
       displayName: 'Operations Manager',
       roleCodes: ['manager'],
-      permissionCodes: ['warehouse.manage', 'metrics.view', 'documents.approve'],
+      permissionCodes: [
+        'warehouse.manage',
+        'metrics.view',
+        'documents.approve',
+        'inventory.scan',
+        'inventory.receive',
+        'inventory.move',
+        'inventory.pick',
+        'inventory.count',
+        'inventory.adjust'
+      ],
       assignedWarehouseIds: [],
       departmentIds: ['dept-ops']
     },
@@ -86,7 +97,7 @@ function buildUser(role: MockRole): MockUser {
       username: 'warehouse.operator',
       displayName: 'Warehouse Clerk',
       roleCodes: ['warehouse_clerk'],
-      permissionCodes: ['inventory.scan', 'inventory.move', 'inventory.pick'],
+      permissionCodes: ['inventory.scan', 'inventory.receive', 'inventory.move', 'inventory.pick', 'inventory.count', 'inventory.adjust'],
       assignedWarehouseIds: ['wh-1'],
       departmentIds: ['dept-ops']
     }
@@ -138,7 +149,8 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     { id: 'wh-2', code: 'WH-2', name: 'Secondary Warehouse', department_id: 'dept-ops', department_name: 'District Ops', address: '44 East St' }
   ];
   const zones = [
-    { id: 'zone-1', warehouse_id: 'wh-1', code: 'RECV', name: 'Receiving' }
+    { id: 'zone-1', warehouse_id: 'wh-1', code: 'RECV', name: 'Receiving' },
+    { id: 'zone-2', warehouse_id: 'wh-2', code: 'STAGE', name: 'Staging' }
   ];
   const bins = [
     {
@@ -149,6 +161,36 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
       zone_name: 'Receiving',
       bin_id: 'bin-1',
       bin_code: 'BIN-A1',
+      temperature_band: 'ambient',
+      max_load_lbs: 500,
+      max_length_in: 36,
+      max_width_in: 24,
+      max_height_in: 24,
+      is_active: true
+    },
+    {
+      warehouse_id: 'wh-1',
+      warehouse_name: 'Central Warehouse',
+      zone_id: 'zone-1',
+      zone_code: 'RECV',
+      zone_name: 'Receiving',
+      bin_id: 'bin-2',
+      bin_code: 'BIN-A2',
+      temperature_band: 'ambient',
+      max_load_lbs: 500,
+      max_length_in: 36,
+      max_width_in: 24,
+      max_height_in: 24,
+      is_active: true
+    },
+    {
+      warehouse_id: 'wh-2',
+      warehouse_name: 'Secondary Warehouse',
+      zone_id: 'zone-2',
+      zone_code: 'STAGE',
+      zone_name: 'Staging',
+      bin_id: 'bin-3',
+      bin_code: 'BIN-B1',
       temperature_band: 'ambient',
       max_load_lbs: 500,
       max_length_in: 36,
@@ -180,6 +222,7 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     }
   ];
   let currentUser: MockUser | null = null;
+  let sessionRotationCount = 0;
   const sessions = [
     { token_id: 'sid-current', rotation_reason: 'login', ip_address: '127.0.0.1', user_agent: 'Playwright', created_at: '2026-03-30T08:00:00.000Z' },
     { token_id: 'sid-legacy', rotation_reason: 'rotation', ip_address: '127.0.0.1', user_agent: 'Older Browser', created_at: '2026-03-29T08:00:00.000Z' }
@@ -189,6 +232,8 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     { id: 'note-2', title: 'Document completed', body: 'Receiving document REC-1001 completed.', created_at: '2026-03-30T09:05:00.000Z', read_at: null }
   ];
   const savedViews: Array<{ id: string; view_name: string; filters: Record<string, unknown> }> = [];
+  let firstReceiptCompleted = false;
+  let firstReceiptLotCode = 'FIRST-LOT-001';
   const jobs = [{ id: 'job-1', filename: 'catalog-items.csv', status: 'completed', created_at: '2026-03-30T09:00:00.000Z', created_by_name: 'System Administrator' }];
   const jobResultsById: Record<string, any[]> = {
     'job-1': [{ row_number: 1, outcome: 'imported', message: 'Existing item updated' }]
@@ -227,6 +272,28 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     length_in: 18,
     width_in: 12,
     height_in: 10
+  };
+  const defaultScanMatch = {
+    item_id: 'item-1',
+    item_name: 'Storage Tote',
+    sku: 'SKU-001',
+    barcode: 'BC-00001',
+    temperature_band: 'ambient',
+    weight_lbs: '4',
+    length_in: '18',
+    width_in: '12',
+    height_in: '10'
+  };
+  const firstReceiptItem = {
+    item_id: 'item-first',
+    item_name: 'First Receipt Tote',
+    sku: 'SKU-FIRST',
+    barcode: 'BC-FIRST-RECEIPT',
+    temperature_band: 'ambient',
+    weight_lbs: '1',
+    length_in: '10',
+    width_in: '8',
+    height_in: '4'
   };
   let catalogFavorited = true;
   const moderationCases = [
@@ -359,6 +426,28 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
       return json(route, 200, { success: true });
     }
 
+    if (path === '/api/auth/sessions/rotate' && method === 'POST') {
+      if (!currentUser) {
+        return json(route, 401, { message: 'Not authenticated' });
+      }
+
+      sessionRotationCount += 1;
+      const previousSessionId = currentUser.sid;
+      const nextSessionId = `${previousSessionId}-r${sessionRotationCount}`;
+      currentUser = {
+        ...currentUser,
+        sid: nextSessionId
+      };
+      sessions[0] = {
+        ...sessions[0],
+        token_id: nextSessionId,
+        rotation_reason: 'session_rotation',
+        created_at: `2026-03-30T08:${String(sessionRotationCount).padStart(2, '0')}:00.000Z`
+      };
+
+      return json(route, 200, { token: `mock-token-${sessionRotationCount}`, user: currentUser });
+    }
+
     if (path === '/api/auth/login-hints' && method === 'GET') {
       if (options.loginHintsFails) {
         return json(route, 503, { message: 'Login hint service unavailable' });
@@ -465,34 +554,113 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     }
 
     if (path === '/api/search/views' && method === 'POST') {
+      if (options.savedViewLimitReached) {
+        return json(route, 409, { message: 'Saved view limit reached. Update an existing view or delete one before creating another.' });
+      }
+
       const body = request.postDataJSON() as { viewName: string; filters: Record<string, unknown> };
       savedViews.unshift({
         id: `view-${savedViews.length + 1}`,
         view_name: body.viewName,
         filters: body.filters
       });
-      return json(route, 201, { success: true });
+      return json(route, 201, {
+        id: savedViews[0].id,
+        view_name: body.viewName,
+        filters: body.filters,
+        created_at: '2026-04-04T09:00:00.000Z'
+      });
     }
 
     if (path === '/api/inventory/scan' && method === 'POST') {
       const body = request.postDataJSON() as { code: string };
       if (body.code === 'bad-scan') {
-        return json(route, 404, { message: 'No matching inventory record found' });
+        return json(route, 200, { kind: 'no_match', code: body.code, message: 'No matching item or lot found' });
+      }
+
+      if (body.code === 'BC-FIRST-RECEIPT' || body.code === 'SKU-FIRST') {
+        if (!firstReceiptCompleted) {
+          return json(route, 200, {
+            kind: 'item_only',
+            code: body.code,
+            item: firstReceiptItem,
+            receiving_warehouses: [
+              { warehouse_id: 'wh-1', warehouse_name: 'Central Warehouse' },
+              { warehouse_id: 'wh-2', warehouse_name: 'Secondary Warehouse' }
+            ]
+          });
+        }
+
+        return json(route, 200, {
+          kind: 'single_position',
+          code: body.code,
+          match: {
+            ...firstReceiptItem,
+            lot_id: 'lot-first',
+            lot_code: firstReceiptLotCode,
+            quantity_on_hand: '1',
+            warehouse_id: 'wh-2',
+            warehouse_name: 'Secondary Warehouse',
+            bin_id: 'bin-3',
+            bin_code: 'BIN-B1',
+            bin_quantity: '1'
+          }
+        });
+      }
+
+      if (body.code === 'BC-MULTI-LOT') {
+        return json(route, 200, {
+          kind: 'multiple_positions',
+          code: body.code,
+          matches: [
+            {
+              ...firstReceiptItem,
+              item_id: 'item-multi',
+              item_name: 'Multi Lot Tote',
+              sku: 'SKU-MULTI',
+              barcode: 'BC-MULTI-LOT',
+              lot_id: 'lot-multi-1',
+              lot_code: 'LOT-A',
+              quantity_on_hand: '4',
+              warehouse_id: 'wh-1',
+              warehouse_name: 'Central Warehouse',
+              bin_id: 'bin-1',
+              bin_code: 'BIN-A1',
+              bin_quantity: '2'
+            },
+            {
+              ...firstReceiptItem,
+              item_id: 'item-multi',
+              item_name: 'Multi Lot Tote',
+              sku: 'SKU-MULTI',
+              barcode: 'BC-MULTI-LOT',
+              lot_id: 'lot-multi-2',
+              lot_code: 'LOT-B',
+              quantity_on_hand: '7',
+              warehouse_id: 'wh-1',
+              warehouse_name: 'Central Warehouse',
+              bin_id: 'bin-2',
+              bin_code: 'BIN-A2',
+              bin_quantity: '3'
+            }
+          ]
+        });
       }
 
       return json(route, 200, {
-        item_id: 'item-1',
-        item_name: 'Storage Tote',
-        sku: 'SKU-001',
-        barcode: 'BC-00001',
-        lot_id: 'lot-1',
-        lot_code: 'LOT-1',
-        warehouse_id: 'wh-1',
-        warehouse_name: 'Central Warehouse',
-        bin_id: 'bin-1',
-        bin_code: 'BIN-A1',
-        quantity_on_hand: 18,
-        temperature_band: 'ambient'
+        kind: 'single_position',
+        code: body.code,
+        match: {
+          ...defaultScanMatch,
+          lot_id: 'lot-1',
+          lot_code: 'LOT-1',
+          warehouse_id: 'wh-1',
+          warehouse_name: 'Central Warehouse',
+          bin_id: 'bin-1',
+          bin_code: 'BIN-A1',
+          quantity_on_hand: '18',
+          bin_quantity: '18'
+        }
       });
     }
 
@@ -505,6 +673,11 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     }
 
     if (path === '/api/inventory/receive' && method === 'POST') {
+      const body = request.postDataJSON() as { itemId?: string; lotCode?: string };
+      if (body.itemId === 'item-first') {
+        firstReceiptCompleted = true;
+        firstReceiptLotCode = body.lotCode || firstReceiptLotCode;
+      }
       return json(route, 200, { success: true });
     }
 
@@ -621,7 +794,7 @@ export async function installMockApi(page: Page, options: MockOptions = {}) {
     }
 
     if (path === '/api/warehouse-setup/options' && method === 'GET') {
-      return json(route, 200, { departments });
+      return json(route, 200, { departments, temperatureBands: ['ambient', 'chilled', 'frozen'] });
     }
 
     if (path === '/api/warehouses' && method === 'GET') {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from '../config.js';
+import { logProcessError } from '../utils/error-logging.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -54,6 +55,6 @@ const run = async (): Promise<void> => {
 };
 
 run().catch((error) => {
-  console.error(error);
+  logProcessError('db_migrate', error);
   process.exitCode = 1;
 });

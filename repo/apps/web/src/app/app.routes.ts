@@ -38,8 +38,24 @@ export const routes: Routes = [
       { path: 'workspace/warehouse-clerk', component: ClerkWorkspacePageComponent, canActivate: [roleGuard], data: { roles: ['warehouse_clerk'] } },
       { path: 'dashboard', component: DashboardPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager'] } },
       { path: 'search', component: SearchPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager', 'moderator', 'catalog_editor', 'warehouse_clerk'] } },
-      { path: 'inventory', component: InventoryPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager', 'warehouse_clerk'] } },
-      { path: 'documents', component: DocumentsPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager', 'warehouse_clerk'] } },
+      {
+        path: 'inventory',
+        component: InventoryPageComponent,
+        canActivate: [roleGuard],
+        data: {
+          roles: ['administrator', 'manager', 'warehouse_clerk'],
+          permissionsAny: ['inventory.scan', 'inventory.receive', 'inventory.move', 'inventory.pick']
+        }
+      },
+      {
+        path: 'documents',
+        component: DocumentsPageComponent,
+        canActivate: [roleGuard],
+        data: {
+          roles: ['administrator', 'manager', 'warehouse_clerk'],
+          permissionsAny: ['inventory.receive', 'inventory.pick', 'inventory.move', 'inventory.count', 'inventory.adjust', 'documents.approve']
+        }
+      },
       { path: 'warehouse', component: WarehousePageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager'] } },
       { path: 'catalog', component: CatalogPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'manager', 'moderator', 'catalog_editor', 'warehouse_clerk'] } },
       { path: 'moderation', component: ModerationPageComponent, canActivate: [roleGuard], data: { roles: ['administrator', 'moderator'] } },

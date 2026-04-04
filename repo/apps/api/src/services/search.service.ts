@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import { AccessControlService, type SearchAccessScope } from './access-control.service.js';
 import type { AuthenticatedUser } from '../types/fastify.js';
+import { withTransaction } from '../utils/db.js';
 
 type SearchFilters = {
   item?: string;
@@ -15,12 +17,12 @@ type SearchFilters = {
 };
 
 const SORT_COLUMNS: Record<string, string> = {
-  itemName: 'i.name',
-  sku: 'i.sku',
-  warehouse: 'w.name',
-  lot: 'l.lot_code',
-  documentStatus: 'doc_view.status',
-  updatedAt: 'COALESCE(doc_view.document_timestamp, l.created_at, i.created_at)'
+  itemName: 'item_name',
+  sku: 'sku',
+  warehouse: 'warehouse_name',
+  lot: 'lot_code',
+  documentStatus: 'document_status',
+  updatedAt: 'updated_at'
 };
 
 const normalizeDateUpperBound = (rawDateTo: string) => {
@@ -40,14 +42,25 @@ const normalizeDateUpperBound = (rawDateTo: string) => {
   return { operator: '<=', value: normalizedDateTo.toISOString() };
 };
 
-export const buildSearchQuery = (user: AuthenticatedUser, filters: SearchFilters) => {
+export const buildSearchQuery = (scope: SearchAccessScope, filters: SearchFilters) => {
   const values: unknown[] = [];
   const conditions: string[] = ['i.deleted_at IS NULL'];
   const documentFilters: string[] = [];
 
   if (filters.item) {
     values.push(`%${filters.item}%`);
-    conditions.push(`(i.name ILIKE $${values.length} OR i.sku ILIKE $${values.length} OR b.barcode ILIKE $${values.length})`);
+    conditions.push(`
+      (
+        i.name ILIKE $${values.length}
+        OR i.sku ILIKE $${values.length}
+        OR EXISTS (
+          SELECT 1
+          FROM barcodes barcode_filter
+          WHERE barcode_filter.item_id = i.id
+            AND barcode_filter.barcode ILIKE $${values.length}
+        )
+      )
+    `);
   }
   if (filters.lot) {
     values.push(`%${filters.lot}%`);
@@ -72,12 +85,23 @@ export const buildSearchQuery = (user: AuthenticatedUser, filters: SearchFilters
       documentFilters.push(`COALESCE(d.updated_at, d.created_at) ${upperBound.operator} $${values.length}`);
     }
   }
-  if (!user.roleCodes.includes('administrator') && !user.roleCodes.includes('manager')) {
-    if (!user.assignedWarehouseIds.length) {
+  if (!scope.global) {
+    const scopeConditions: string[] = [];
+
+    if (scope.warehouseIds.length) {
+      values.push(scope.warehouseIds);
+      scopeConditions.push(`w.id = ANY($${values.length}::uuid[])`);
+    }
+
+    if (scope.departmentIds.length) {
+      values.push(scope.departmentIds);
+      scopeConditions.push(`i.department_id = ANY($${values.length}::uuid[])`);
+    }
+
+    if (!scopeConditions.length) {
       conditions.push('1 = 0');
     } else {
-      values.push(user.assignedWarehouseIds);
-      conditions.push(`w.id = ANY($${values.length}::uuid[])`);
+      conditions.push(`(${scopeConditions.join(' OR ')})`);
     }
   }
 
@@ -100,50 +124,89 @@ export const buildSearchQuery = (user: AuthenticatedUser, filters: SearchFilters
     pageSize,
     values,
     query: `
-      SELECT
-        i.id AS item_id,
-        i.name AS item_name,
-        i.sku,
-        b.barcode,
-        l.id AS lot_id,
-        l.lot_code,
-        l.quantity_on_hand,
-        w.id AS warehouse_id,
-        w.name AS warehouse_name,
-        doc_view.status AS document_status,
-        COALESCE(doc_view.document_timestamp, l.created_at, i.created_at) AS updated_at,
-        COUNT(*) OVER() AS total_count
-      FROM items i
-      LEFT JOIN barcodes b ON b.item_id = i.id
-      LEFT JOIN lots l ON l.item_id = i.id
-      LEFT JOIN warehouses w ON w.id = l.warehouse_id
-      LEFT JOIN LATERAL (
+      WITH barcode_rollup AS (
         SELECT
-          d.id AS document_id,
-          d.status,
-          COALESCE(d.updated_at, d.created_at) AS document_timestamp
-        FROM inventory_transactions it
-        JOIN documents d ON d.id = it.document_id
-        WHERE it.item_id = i.id
-          AND (l.id IS NULL OR it.lot_id = l.id)
-          AND (w.id IS NULL OR it.warehouse_id = w.id)
-          ${documentFilterSql}
-        ORDER BY COALESCE(d.updated_at, d.created_at) DESC, d.id DESC
-        LIMIT 1
-      ) doc_view ON TRUE
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY ${sortColumn} ${sortDirection}, i.name ASC
+          b.item_id,
+          MIN(b.barcode) AS display_barcode
+        FROM barcodes b
+        GROUP BY b.item_id
+      ),
+      search_rows AS (
+        SELECT
+          i.id AS item_id,
+          i.name AS item_name,
+          i.sku,
+          barcode_rollup.display_barcode AS barcode,
+          l.id AS lot_id,
+          l.lot_code,
+          l.quantity_on_hand,
+          w.id AS warehouse_id,
+          w.name AS warehouse_name,
+          doc_view.status AS document_status,
+          COALESCE(doc_view.document_timestamp, l.created_at, i.created_at) AS updated_at
+        FROM items i
+        LEFT JOIN barcode_rollup ON barcode_rollup.item_id = i.id
+        LEFT JOIN lots l ON l.item_id = i.id
+        LEFT JOIN warehouses w ON w.id = l.warehouse_id
+        LEFT JOIN LATERAL (
+          SELECT
+            d.id AS document_id,
+            d.status,
+            COALESCE(d.updated_at, d.created_at) AS document_timestamp
+          FROM inventory_transactions it
+          JOIN documents d ON d.id = it.document_id
+          WHERE it.item_id = i.id
+            AND (l.id IS NULL OR it.lot_id = l.id)
+            AND (w.id IS NULL OR it.warehouse_id = w.id)
+            ${documentFilterSql}
+          ORDER BY COALESCE(d.updated_at, d.created_at) DESC, d.id DESC
+          LIMIT 1
+        ) doc_view ON TRUE
+        WHERE ${conditions.join(' AND ')}
+      )
+      SELECT
+        item_id,
+        item_name,
+        sku,
+        barcode,
+        lot_id,
+        lot_code,
+        quantity_on_hand,
+        warehouse_id,
+        warehouse_name,
+        document_status,
+        updated_at,
+        COUNT(*) OVER() AS total_count
+      FROM search_rows
+      ORDER BY ${sortColumn} ${sortDirection} NULLS LAST,
+               item_name ASC,
+               sku ASC,
+               warehouse_name ASC NULLS LAST,
+               lot_code ASC NULLS LAST,
+               item_id ASC,
+               COALESCE(lot_id, '00000000-0000-0000-0000-000000000000'::uuid) ASC,
+               COALESCE(warehouse_id, '00000000-0000-0000-0000-000000000000'::uuid) ASC
       LIMIT $${limitIndex}
       OFFSET $${offsetIndex}
     `
   };
 };
 
+const searchError = (statusCode: number, message: string, name = 'Error') => Object.assign(new Error(message), {
+  statusCode,
+  name
+});
+
 export class SearchService {
-  constructor(private readonly fastify: FastifyInstance) {}
+  private readonly accessControl: AccessControlService;
+
+  constructor(private readonly fastify: FastifyInstance) {
+    this.accessControl = new AccessControlService(fastify);
+  }
 
   async search(user: AuthenticatedUser, filters: SearchFilters) {
-    const { query, values, page, pageSize } = buildSearchQuery(user, filters);
+    const scope = await this.accessControl.getSearchScope(user);
+    const { query, values, page, pageSize } = buildSearchQuery(scope, filters);
     const result = await this.fastify.db.query(query, values);
     const total = result.rowCount ? Number(result.rows[0].total_count) : 0;
 
@@ -166,26 +229,61 @@ export class SearchService {
   }
 
   async saveView(userId: string, viewName: string, filters: Record<string, unknown>) {
-    const countResult = await this.fastify.db.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM saved_views WHERE user_id = $1`,
-      [userId]
-    );
+    return withTransaction(this.fastify.db, async (client) => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, [userId]);
 
-    if (Number(countResult.rows[0]?.count ?? 0) >= 50) {
-      throw new Error('Saved view limit reached');
-    }
+      const existingResult = await client.query<{ id: string; view_name: string; filters: Record<string, unknown>; created_at: string }>(
+        `
+          SELECT id, view_name, filters, created_at
+          FROM saved_views
+          WHERE user_id = $1 AND view_name = $2
+        `,
+        [userId, viewName]
+      );
 
-    const result = await this.fastify.db.query(
-      `
-        INSERT INTO saved_views (user_id, view_name, filters)
-        VALUES ($1, $2, $3::jsonb)
-        ON CONFLICT (user_id, view_name)
-        DO UPDATE SET filters = EXCLUDED.filters
-        RETURNING id, view_name, filters, created_at
-      `,
-      [userId, viewName, JSON.stringify(filters)]
-    );
+      if (existingResult.rowCount) {
+        const updateResult = await client.query(
+          `
+            UPDATE saved_views
+            SET filters = $3::jsonb
+            WHERE user_id = $1 AND view_name = $2
+            RETURNING id, view_name, filters, created_at
+          `,
+          [userId, viewName, JSON.stringify(filters)]
+        );
 
-    return result.rows[0];
+        return {
+          operation: 'updated' as const,
+          savedView: updateResult.rows[0]
+        };
+      }
+
+      const countResult = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM saved_views WHERE user_id = $1`,
+        [userId]
+      );
+
+      if (Number(countResult.rows[0]?.count ?? 0) >= 50) {
+        throw searchError(
+          409,
+          'Saved view limit reached. Update an existing view or delete one before creating another.',
+          'Conflict'
+        );
+      }
+
+      const insertResult = await client.query(
+        `
+          INSERT INTO saved_views (user_id, view_name, filters)
+          VALUES ($1, $2, $3::jsonb)
+          RETURNING id, view_name, filters, created_at
+        `,
+        [userId, viewName, JSON.stringify(filters)]
+      );
+
+      return {
+        operation: 'created' as const,
+        savedView: insertResult.rows[0]
+      };
+    });
   }
 }

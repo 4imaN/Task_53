@@ -1,5 +1,6 @@
 import { buildServer } from '../server.js';
 import { SchedulerService } from '../services/scheduler.service.js';
+import { logProcessError } from '../utils/error-logging.js';
 
 const run = async () => {
   const server = await buildServer();
@@ -20,6 +21,6 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(error);
+  logProcessError('run_nightly_jobs', error);
   process.exitCode = 1;
 });

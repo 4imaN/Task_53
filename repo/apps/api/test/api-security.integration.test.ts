@@ -5,6 +5,7 @@ import path from 'node:path';
 import argon2 from 'argon2';
 import { describe, expect, it } from 'vitest';
 import { createIntegrationHarness, loginAsAdmin, loginAsUser, runIntegration } from './helpers/integration.js';
+import { buildServer } from '../src/server.js';
 import { signPayload } from '../src/utils/hmac.js';
 import { SchedulerService } from '../src/services/scheduler.service.js';
 import { WebhookDeliveryService } from '../src/services/webhook-delivery.service.js';
@@ -490,6 +491,84 @@ describeIfIntegration('security and scheduler integration', () => {
     await server.db.query(`DELETE FROM integration_clients WHERE client_key = $1`, [rateLimitedClientKey]);
   });
 
+  it('shares integration rate-limit state across server instances and after instance recreation', async () => {
+    const primaryServer = harness.server;
+    const serverA = await buildServer();
+    const serverB = await buildServer();
+    let serverC: Awaited<ReturnType<typeof buildServer>> | null = null;
+    await serverA.ready();
+    await serverB.ready();
+    const clientKey = `integration-shared-${Date.now()}`;
+    const secret = Buffer.from(`shared-secret-${Date.now()}`);
+
+    try {
+      await primaryServer.db.query(
+        `
+          INSERT INTO integration_clients (name, client_key, hmac_secret, allowed_departments, scopes, rate_limit_per_minute, is_active)
+          VALUES ($1, $2, $3, '["district-ops"]'::jsonb, '["inventory:write"]'::jsonb, 1, TRUE)
+        `,
+        [clientKey, clientKey, secret]
+      );
+
+      const payload = {
+        departmentCode: 'district-ops',
+        records: [{ departmentCode: 'district-ops', sku: 'SKU-1001', quantity: 1 }]
+      };
+
+      const firstTimestamp = String(Date.now() + 10);
+      const firstResponse = await serverA.inject({
+        method: 'POST',
+        url: '/api/integrations/inventory-sync',
+        headers: {
+          'x-omnistock-client': clientKey,
+          'x-omnistock-timestamp': firstTimestamp,
+          'x-omnistock-signature': signPayload(`${firstTimestamp}.${JSON.stringify(payload)}`, secret)
+        },
+        payload
+      });
+      expect(firstResponse.statusCode).toBe(200);
+
+      const secondTimestamp = String(Date.now() + 20);
+      const secondResponse = await serverB.inject({
+        method: 'POST',
+        url: '/api/integrations/inventory-sync',
+        headers: {
+          'x-omnistock-client': clientKey,
+          'x-omnistock-timestamp': secondTimestamp,
+          'x-omnistock-signature': signPayload(`${secondTimestamp}.${JSON.stringify(payload)}`, secret)
+        },
+        payload
+      });
+      expect(secondResponse.statusCode).toBe(429);
+
+      await serverA.close();
+      serverC = await buildServer();
+      await serverC.ready();
+
+      const thirdTimestamp = String(Date.now() + 30);
+      const thirdResponse = await serverC.inject({
+        method: 'POST',
+        url: '/api/integrations/inventory-sync',
+        headers: {
+          'x-omnistock-client': clientKey,
+          'x-omnistock-timestamp': thirdTimestamp,
+          'x-omnistock-signature': signPayload(`${thirdTimestamp}.${JSON.stringify(payload)}`, secret)
+        },
+        payload
+      });
+      expect(thirdResponse.statusCode).toBe(429);
+    } finally {
+      if (serverC) {
+        await serverC.close();
+      }
+      if (serverA.server.listening) {
+        await serverA.close();
+      }
+      await serverB.close();
+      await primaryServer.db.query(`DELETE FROM integration_clients WHERE client_key = $1`, [clientKey]);
+    }
+  });
+
   it('stores integration secrets encrypted at rest, keeps HMAC verification working, and does not leak secrets in listings', async () => {
     const server = harness.server;
     const { token } = await loginAsAdmin(server);
@@ -585,7 +664,24 @@ describeIfIntegration('security and scheduler integration', () => {
     });
 
     expect(unsafeResponse.statusCode).toBe(422);
-    expect(unsafeResponse.body).toContain('internal network host');
+    expect(unsafeResponse.body).toContain('Webhook URL');
+
+    const singleLabelResponse = await server.inject({
+      method: 'POST',
+      url: '/api/integration-clients',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: `Single Label Webhook ${Date.now()}`,
+        clientKey: `single-label-${Date.now()}`,
+        hmacSecret: 'single-label-secret',
+        allowedDepartments: ['district-ops'],
+        scopes: ['inventory:write'],
+        webhookUrl: 'http://warehouse-app/webhook'
+      }
+    });
+
+    expect(singleLabelResponse.statusCode).toBe(422);
+    expect(singleLabelResponse.body).toContain('single-label');
 
     const safeResponse = await server.inject({
       method: 'POST',
@@ -616,6 +712,9 @@ describeIfIntegration('security and scheduler integration', () => {
   it('stores user contact fields encrypted at rest and does not expose them in admin listings', async () => {
     const server = harness.server;
     const { token } = await loginAsAdmin(server);
+    const warehouseResult = await server.db.query<{ id: string }>(
+      `SELECT id FROM warehouses WHERE code = 'WH-01'`
+    );
     const username = `sensitive-${Date.now()}`;
     const phoneNumber = '+1-555-010-3344';
     const personalEmail = `sensitive-${Date.now()}@district.local`;
@@ -629,6 +728,7 @@ describeIfIntegration('security and scheduler integration', () => {
         displayName: 'Sensitive Contact User',
         password: 'SensitiveUser!123',
         roleCodes: ['warehouse_clerk'],
+        warehouseIds: [warehouseResult.rows[0].id],
         phoneNumber,
         personalEmail
       }
@@ -733,9 +833,19 @@ describeIfIntegration('security and scheduler integration', () => {
     expect(response.statusCode).toBe(200);
     expect(receivedRequests).toHaveLength(1);
 
-    const deliveryResult = await server.db.query<{ delivery_status: string; attempt_count: number; response_code: number | null }>(
+    const deliveryResult = await server.db.query<{
+      delivery_status: string;
+      attempt_count: number;
+      response_code: number | null;
+      payload: {
+        kind: string;
+        topLevelKeys: string[];
+        scalarFields: Record<string, unknown>;
+        collectionCounts: Record<string, number>;
+      };
+    }>(
       `
-        SELECT delivery_status, attempt_count, response_code
+        SELECT delivery_status, attempt_count, response_code, payload
         FROM webhook_deliveries
         WHERE integration_client_id = $1
         ORDER BY created_at DESC
@@ -747,6 +857,12 @@ describeIfIntegration('security and scheduler integration', () => {
     expect(deliveryResult.rows[0].delivery_status).toBe('delivered');
     expect(Number(deliveryResult.rows[0].attempt_count)).toBe(1);
     expect(deliveryResult.rows[0].response_code).toBe(204);
+    expect(deliveryResult.rows[0].payload).toMatchObject({
+      kind: 'summary'
+    });
+    expect(deliveryResult.rows[0].payload.topLevelKeys).toEqual(expect.arrayContaining(['allowedDepartments', 'clientKey', 'payload', 'timestamp']));
+    expect(deliveryResult.rows[0].payload.collectionCounts).toMatchObject({ allowedDepartments: 1 });
+    expect(JSON.stringify(deliveryResult.rows[0].payload)).not.toContain('SKU-1001');
     expect(String(receivedRequests[0].headers['x-omnistock-event'])).toBe('inventory.sync.accepted');
 
     await new Promise<void>((resolve, reject) => webhookServer.close((error) => error ? reject(error) : resolve()));
@@ -799,6 +915,66 @@ describeIfIntegration('security and scheduler integration', () => {
 
     await server.db.query(`DELETE FROM webhook_deliveries WHERE integration_client_id = $1`, [clientResult.rows[0].id]);
     await server.db.query(`DELETE FROM integration_clients WHERE id = $1`, [clientResult.rows[0].id]);
+  });
+
+  it('purges webhook delivery payloads outside the configured retention window during nightly jobs', async () => {
+    const server = harness.server;
+    const scheduler = new SchedulerService(server);
+    const clientKey = `webhook-retention-${Date.now()}`;
+    const secret = Buffer.from(`retention-secret-${Date.now()}`);
+    const clientResult = await server.db.query<{ id: string }>(
+      `
+        INSERT INTO integration_clients (name, client_key, hmac_secret, allowed_departments, scopes, rate_limit_per_minute, webhook_url, is_active)
+        VALUES ($1, $2, $3, '["district-ops"]'::jsonb, '["inventory:write"]'::jsonb, 5, NULL, TRUE)
+        RETURNING id
+      `,
+      [clientKey, clientKey, secret]
+    );
+    const clientId = clientResult.rows[0].id;
+    const referenceDate = new Date('2026-04-01T02:00:00.000Z');
+    const oldCreatedAt = new Date(referenceDate.getTime() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const recentCreatedAt = new Date(referenceDate.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+
+    const oldDeliveryResult = await server.db.query<{ id: string }>(
+      `
+        INSERT INTO webhook_deliveries (integration_client_id, event_type, payload, target_url, delivery_status, created_at)
+        VALUES ($1, 'inventory.sync.accepted', '{"kind":"summary","collectionCounts":{"records":1}}'::jsonb, 'http://127.0.0.1/internal', 'failed', $2)
+        RETURNING id
+      `,
+      [clientId, oldCreatedAt]
+    );
+    const recentDeliveryResult = await server.db.query<{ id: string }>(
+      `
+        INSERT INTO webhook_deliveries (integration_client_id, event_type, payload, target_url, delivery_status, created_at)
+        VALUES ($1, 'inventory.sync.accepted', '{"kind":"summary","collectionCounts":{"records":1}}'::jsonb, 'http://127.0.0.1/internal', 'delivered', $2)
+        RETURNING id
+      `,
+      [clientId, recentCreatedAt]
+    );
+
+    try {
+      const result = await scheduler.runNightlyJobs(referenceDate);
+      expect(result.webhookRetentionSummary).toMatchObject({
+        deletedCount: 1,
+        retentionDays: 30
+      });
+
+      const remainingDeliveries = await server.db.query<{ id: string }>(
+        `
+          SELECT id
+          FROM webhook_deliveries
+          WHERE integration_client_id = $1
+          ORDER BY created_at ASC
+        `,
+        [clientId]
+      );
+
+      expect(remainingDeliveries.rows.map((row) => row.id)).toEqual([recentDeliveryResult.rows[0].id]);
+    } finally {
+      await server.db.query(`DELETE FROM webhook_deliveries WHERE integration_client_id = $1`, [clientId]);
+      await server.db.query(`DELETE FROM integration_clients WHERE id = $1`, [clientId]);
+      await server.db.query(`DELETE FROM batch_jobs WHERE job_type = 'scheduler_nightly'`);
+    }
   });
 
   it('runs nightly metrics and archives completed documents older than 365 days', async () => {

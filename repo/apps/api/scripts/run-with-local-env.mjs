@@ -68,7 +68,7 @@ const missingVars = requiredVars.filter((name) => !process.env[name] || !process
 if (missingVars.length > 0) {
   console.error(
     `[omnistock-api] Missing required environment variables: ${missingVars.join(', ')}.\n`
-    + 'Create apps/api/.env.local from apps/api/.env.example, set secure values, then rerun.'
+    + 'Run `node scripts/bootstrap-local-dev.mjs`, or create apps/api/.env.local from apps/api/.env.example with secure values, then rerun.'
   );
   process.exit(1);
 }

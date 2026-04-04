@@ -41,7 +41,7 @@ SELECT data.zone_id, data.code, data.temperature_band, data.max_load_lbs, data.m
 FROM (
   SELECT (SELECT id FROM zone_recv) AS zone_id, 'RECV-B1' AS code, 'ambient' AS temperature_band, 2400::numeric AS max_load_lbs, 72::numeric AS max_length_in, 48::numeric AS max_width_in, 84::numeric AS max_height_in
   UNION ALL
-  SELECT (SELECT id FROM zone_cold), 'COLD-02', 'cold', 1000, 60, 42, 84
+  SELECT (SELECT id FROM zone_cold), 'COLD-02', 'chilled', 1000, 60, 42, 84
   UNION ALL
   SELECT (SELECT id FROM zone_pick), 'PICK-02', 'ambient', 700, 40, 30, 30
 ) AS data

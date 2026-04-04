@@ -140,20 +140,20 @@ export class ShellLayoutComponent {
       { label: 'Profile', path: '/profile', roles: ['manager'] }
     ],
     moderator: [
-      { label: 'Global Search', path: '/search', roles: ['moderator'] },
+      { label: 'Department Search', path: '/search', roles: ['moderator'] },
       { label: 'Abuse Report Queue', path: '/moderation', roles: ['moderator'], badge: 'Cases' },
       { label: 'Inbox', path: '/inbox', roles: ['moderator'] },
       { label: 'Profile', path: '/profile', roles: ['moderator'] }
     ],
     catalog_editor: [
-      { label: 'Search & Saved Views', path: '/search', roles: ['catalog_editor'] },
+      { label: 'Department Search & Saved Views', path: '/search', roles: ['catalog_editor'] },
       { label: 'Catalog Content', path: '/catalog', roles: ['catalog_editor'] },
       { label: 'Bulk Catalog I/O', path: '/bulk', roles: ['catalog_editor'] },
       { label: 'Inbox', path: '/inbox', roles: ['catalog_editor'] },
       { label: 'Profile', path: '/profile', roles: ['catalog_editor'] }
     ],
     warehouse_clerk: [
-      { label: 'Search & Saved Views', path: '/search', roles: ['warehouse_clerk'] },
+      { label: 'Warehouse Search & Saved Views', path: '/search', roles: ['warehouse_clerk'] },
       { label: 'Scan / Quick Action', path: '/inventory', roles: ['warehouse_clerk'], badge: 'Scan' },
       { label: 'Document Queue', path: '/documents', roles: ['warehouse_clerk'] },
       { label: 'Catalog', path: '/catalog', roles: ['warehouse_clerk'] },

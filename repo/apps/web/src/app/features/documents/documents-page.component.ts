@@ -83,6 +83,14 @@ const documentTypeMeta: Record<DocumentType, { label: string; note: string }> = 
   }
 };
 
+const documentCreatePermissionByType: Record<DocumentType, string> = {
+  receiving: 'inventory.receive',
+  shipping: 'inventory.pick',
+  transfer: 'inventory.move',
+  cycle_count: 'inventory.count',
+  adjustment: 'inventory.adjust'
+};
+
 @Component({
   selector: 'app-documents-page',
   standalone: true,
@@ -108,7 +116,7 @@ const documentTypeMeta: Record<DocumentType, { label: string; note: string }> = 
 
         <div class="filter-strip catalog-section-gap">
           <select class="form-input" [(ngModel)]="createForm.type" (ngModelChange)="onTypeChange()">
-            <option *ngFor="let type of documentTypes" [value]="type">{{ documentTypeMeta[type].label }}</option>
+            <option *ngFor="let type of availableDocumentTypes()" [value]="type">{{ documentTypeMeta[type].label }}</option>
           </select>
           <select class="form-input" [(ngModel)]="createForm.warehouseId" (ngModelChange)="onWarehouseChange()">
             <option value="">Select warehouse</option>
@@ -218,7 +226,7 @@ const documentTypeMeta: Record<DocumentType, { label: string; note: string }> = 
         </div>
 
         <div class="button-row catalog-section-gap">
-          <button class="primary-button" type="button" (click)="createDocument()">Create document</button>
+          <button class="primary-button" type="button" [disabled]="!canCreateType(createForm.type)" (click)="createDocument()">Create document</button>
           <span class="supporting">Server-side validation still applies to warehouse scope, department match, and bin ownership.</span>
         </div>
 
@@ -358,6 +366,10 @@ export class DocumentsPageComponent implements OnInit {
 
   readonly documentTypeMeta = documentTypeMeta;
   readonly documentTypes = Object.keys(documentTypeMeta) as DocumentType[];
+  readonly availableDocumentTypes = computed(() => {
+    const visibleTypes = this.documentTypes.filter((type) => this.canCreateType(type));
+    return visibleTypes.length ? visibleTypes : this.documentTypes;
+  });
   readonly availableStatuses = Object.keys(transitions);
 
   documents: any[] = [];
@@ -392,6 +404,10 @@ export class DocumentsPageComponent implements OnInit {
   private readonly loadingSignal = signal(false);
 
   async ngOnInit() {
+    const defaultType = this.availableDocumentTypes()[0];
+    if (defaultType) {
+      this.createForm.type = defaultType;
+    }
     await Promise.all([this.loadWarehouses(), this.loadItems(), this.loadDocuments()]);
     await this.refreshBinOptions();
   }
@@ -438,6 +454,11 @@ export class DocumentsPageComponent implements OnInit {
 
   destinationWarehouses() {
     return this.warehouses.filter((warehouse) => warehouse.id !== this.createForm.warehouseId);
+  }
+
+  canCreateType(type: DocumentType) {
+    const permission = documentCreatePermissionByType[type];
+    return this.session.user()?.permissionCodes.includes(permission) ?? false;
   }
 
   targetBins() {
@@ -521,6 +542,9 @@ export class DocumentsPageComponent implements OnInit {
   }
 
   async onTypeChange() {
+    if (!this.canCreateType(this.createForm.type)) {
+      this.createForm.type = this.availableDocumentTypes()[0] ?? this.documentTypes[0];
+    }
     this.message = '';
     this.createForm.source = '';
     this.createForm.expectedArrivalDate = '';

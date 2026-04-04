@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { buildServer } from './server.js';
 import { SchedulerService } from './services/scheduler.service.js';
+import { logProcessError } from './utils/error-logging.js';
 
 const start = async () => {
   const server = await buildServer();
@@ -13,6 +14,6 @@ const start = async () => {
 };
 
 start().catch((error) => {
-  console.error(error);
+  logProcessError('api_startup', error);
   process.exitCode = 1;
 });

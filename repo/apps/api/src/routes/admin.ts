@@ -1,17 +1,122 @@
-import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
+import { validateRoleScopeAssignments } from '../services/access-control.service.js';
 import { IntegrationClientService } from '../services/integration-client.service.js';
 import { validateInternalWebhookUrl } from '../services/webhook-url.service.js';
 import { AuthService } from '../services/auth.service.js';
 import { assertPasswordNotReused, PASSWORD_REUSE_MESSAGE } from '../utils/password-history.js';
-import { validatePasswordComplexity } from '../utils/password-policy.js';
+import { assertPasswordComplexity, hashPassword, PasswordPolicyError } from '../utils/password-policy.js';
 
 type AccessControlBody = {
   roleCodes?: string[];
   warehouseIds?: string[];
   departmentIds?: string[];
 };
+
+const userIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['userId'],
+  properties: {
+    userId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const createUserBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['username', 'displayName', 'password'],
+  properties: {
+    username: { type: 'string', minLength: 1, maxLength: 255 },
+    displayName: { type: 'string', minLength: 1, maxLength: 255 },
+    password: { type: 'string', minLength: 1, maxLength: 255 },
+    phoneNumber: { type: 'string', minLength: 1, maxLength: 64 },
+    personalEmail: { type: 'string', minLength: 3, maxLength: 255 },
+    isActive: { type: 'boolean' },
+    roleCodes: {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 64 },
+      maxItems: 20
+    },
+    warehouseIds: {
+      type: 'array',
+      items: { type: 'string', format: 'uuid' },
+      maxItems: 100
+    },
+    departmentIds: {
+      type: 'array',
+      items: { type: 'string', format: 'uuid' },
+      maxItems: 100
+    }
+  }
+} as const;
+
+const updateUserBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    username: { type: 'string', minLength: 1, maxLength: 255 },
+    displayName: { type: 'string', minLength: 1, maxLength: 255 },
+    isActive: { type: 'boolean' },
+    password: { type: 'string', minLength: 1, maxLength: 255 },
+    phoneNumber: { anyOf: [{ type: 'string', minLength: 1, maxLength: 64 }, { type: 'null' }] },
+    personalEmail: { anyOf: [{ type: 'string', minLength: 3, maxLength: 255 }, { type: 'null' }] }
+  }
+} as const;
+
+const accessControlBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    roleCodes: {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 64 },
+      maxItems: 20
+    },
+    warehouseIds: {
+      type: 'array',
+      items: { type: 'string', format: 'uuid' },
+      maxItems: 100
+    },
+    departmentIds: {
+      type: 'array',
+      items: { type: 'string', format: 'uuid' },
+      maxItems: 100
+    }
+  }
+} as const;
+
+const auditLogQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    limit: { type: 'integer', minimum: 1, maximum: 100 }
+  }
+} as const;
+
+const integrationClientBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'clientKey', 'hmacSecret'],
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 255 },
+    clientKey: { type: 'string', minLength: 1, maxLength: 255 },
+    hmacSecret: { type: 'string', minLength: 1, maxLength: 1024 },
+    allowedDepartments: {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 255 },
+      maxItems: 100
+    },
+    scopes: {
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 255 },
+      maxItems: 50
+    },
+    rateLimitPerMinute: { type: 'integer', minimum: 1, maximum: 100000 },
+    webhookUrl: { anyOf: [{ type: 'string', minLength: 1, maxLength: 2048 }, { type: 'null' }] },
+    isActive: { type: 'boolean' }
+  }
+} as const;
 
 const assertAdminOnly = (user: { roleCodes: string[] }) => {
   if (!user.roleCodes.includes('administrator')) {
@@ -172,7 +277,8 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/users', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')],
+    schema: { body: createUserBodySchema }
   }, async (request, reply) => {
     assertAdminOnly(request.authUser!);
 
@@ -188,9 +294,14 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
       departmentIds?: string[];
     };
 
-    const passwordErrors = validatePasswordComplexity(body.password);
-    if (passwordErrors.length) {
-      return reply.code(422).send({ message: passwordErrors.join(' ') });
+    try {
+      assertPasswordComplexity(body.password);
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) {
+        return reply.code(error.statusCode).send({ message: error.message });
+      }
+
+      throw error;
     }
 
     const roleCodes = [...new Set(body.roleCodes ?? ['warehouse_clerk'])];
@@ -200,13 +311,9 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
     await validateRoleCodes(fastify, roleCodes);
     await validateScopeIds(fastify, 'warehouses', warehouseIds);
     await validateScopeIds(fastify, 'departments', departmentIds);
+    validateRoleScopeAssignments({ roleCodes, warehouseIds, departmentIds });
 
-    const passwordHash = await argon2.hash(body.password, {
-      type: argon2.argon2id,
-      memoryCost: config.argon2MemoryCost,
-      timeCost: config.argon2TimeCost,
-      parallelism: config.argon2Parallelism
-    });
+    const passwordHash = await hashPassword(body.password);
 
     const client = await fastify.db.connect();
     let createdUserId = '';
@@ -284,7 +391,11 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.patch('/users/:userId', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')],
+    schema: {
+      params: userIdParamsSchema,
+      body: updateUserBodySchema
+    }
   }, async (request, reply) => {
     assertAdminOnly(request.authUser!);
     const { userId } = request.params as { userId: string };
@@ -356,9 +467,14 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
     }
 
     if (body.password) {
-      const passwordErrors = validatePasswordComplexity(body.password);
-      if (passwordErrors.length) {
-        return reply.code(422).send({ message: passwordErrors.join(' ') });
+      try {
+        assertPasswordComplexity(body.password);
+      } catch (error) {
+        if (error instanceof PasswordPolicyError) {
+          return reply.code(error.statusCode).send({ message: error.message });
+        }
+
+        throw error;
       }
       const currentRecord = currentUserRecord;
       if (!currentRecord) {
@@ -377,12 +493,7 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
         return reply.code(422).send({ message });
       }
 
-      const passwordHash = await argon2.hash(body.password, {
-        type: argon2.argon2id,
-        memoryCost: config.argon2MemoryCost,
-        timeCost: config.argon2TimeCost,
-        parallelism: config.argon2Parallelism
-      });
+      const passwordHash = await hashPassword(body.password);
       const nextHistory = [
         currentRecord.password_hash,
         ...(currentRecord.password_history ?? [])
@@ -396,6 +507,15 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
     }
 
     if (!assignments.length) {
+      const userResult = await fastify.db.query<{ id: string }>(
+        `SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL`,
+        [userId]
+      );
+
+      if (!userResult.rowCount) {
+        return reply.code(404).send({ message: 'User not found' });
+      }
+
       return { success: true };
     }
 
@@ -404,6 +524,7 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
         UPDATE users
         SET ${assignments.join(', ')}, updated_at = NOW()
         WHERE id = $1
+          AND deleted_at IS NULL
         RETURNING id
       `,
       values
@@ -448,7 +569,11 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.put('/users/:userId/access-control', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')],
+    schema: {
+      params: userIdParamsSchema,
+      body: accessControlBodySchema
+    }
   }, async (request, reply) => {
     assertAdminOnly(request.authUser!);
     const { userId } = request.params as { userId: string };
@@ -461,6 +586,7 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
     await validateRoleCodes(fastify, roleCodes);
     await validateScopeIds(fastify, 'warehouses', warehouseIds);
     await validateScopeIds(fastify, 'departments', departmentIds);
+    validateRoleScopeAssignments({ roleCodes, warehouseIds, departmentIds });
 
     const userResult = await fastify.db.query(`SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL`, [userId]);
     if (!userResult.rowCount) {
@@ -489,14 +615,25 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/users/:userId/unlock', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')]
-  }, async (request) => {
+    preHandler: [fastify.authenticate, fastify.requirePermission('users.manage')],
+    schema: { params: userIdParamsSchema }
+  }, async (request, reply) => {
     assertAdminOnly(request.authUser!);
     const { userId } = request.params as { userId: string };
-    await fastify.db.query(
-      `UPDATE users SET failed_login_count = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1`,
+    const result = await fastify.db.query<{ id: string }>(
+      `
+        UPDATE users
+        SET failed_login_count = 0, locked_until = NULL, updated_at = NOW()
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id
+      `,
       [userId]
     );
+
+    if (!result.rowCount) {
+      return reply.code(404).send({ message: 'User not found' });
+    }
 
     request.auditContext = {
       actionType: 'user_unlock',
@@ -508,10 +645,11 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.get('/audit-log', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('audit.read')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('audit.read')],
+    schema: { querystring: auditLogQuerySchema }
   }, async (request) => {
-    const query = request.query as { limit?: string };
-    const limit = Math.min(Number(query.limit ?? 25), 100);
+    const query = request.query as { limit?: number };
+    const limit = query.limit ?? 25;
     const result = await fastify.db.query(
       `
         SELECT timestamp, action_type, resource_type, resource_id, details, ip_address, user_id
@@ -533,7 +671,8 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/integration-clients', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('integrations.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('integrations.manage')],
+    schema: { body: integrationClientBodySchema }
   }, async (request, reply) => {
     assertAdminOnly(request.authUser!);
 
@@ -554,7 +693,13 @@ export const registerAdminRoutes = async (fastify: FastifyInstance) => {
 
     const departments = [...new Set((body.allowedDepartments ?? []).map((entry) => String(entry).trim()).filter(Boolean))];
     const scopes = [...new Set((body.scopes ?? []).map((entry) => String(entry).trim()).filter(Boolean))];
-    const webhookUrl = body.webhookUrl ? validateInternalWebhookUrl(body.webhookUrl) : null;
+    const webhookUrl = body.webhookUrl
+      ? await validateInternalWebhookUrl(body.webhookUrl, {
+        allowedHostnames: config.webhookAllowedHostnames,
+        allowedDomainSuffixes: config.webhookAllowedDomainSuffixes,
+        allowLoopback: config.allowDevWebhookLoopback
+      })
+      : null;
 
     const created = await integrationClients.createClient({
       name: body.name,

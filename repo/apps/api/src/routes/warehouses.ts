@@ -1,22 +1,160 @@
 import type { FastifyInstance } from 'fastify';
 import { AccessControlService } from '../services/access-control.service.js';
+import {
+  CANONICAL_TEMPERATURE_BANDS,
+  canonicalTemperatureBandListText,
+  normalizeTemperatureBand
+} from '../domain/temperature-band.js';
 
 const numericFieldNames = ['maxLoadLbs', 'maxLengthIn', 'maxWidthIn', 'maxHeightIn'] as const;
+const nonEmptyStringPattern = '^(?=.*\\S).+$';
 
-const normalizeBinBody = (body: Record<string, unknown>) => ({
-  code: String(body.code ?? '').trim(),
-  temperatureBand: String(body.temperatureBand ?? '').trim(),
+const warehouseIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['warehouseId'],
+  properties: {
+    warehouseId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const zoneIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['zoneId'],
+  properties: {
+    zoneId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const binIdParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['binId'],
+  properties: {
+    binId: { type: 'string', format: 'uuid' }
+  }
+} as const;
+
+const warehouseCreateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['departmentId', 'code', 'name'],
+  properties: {
+    departmentId: { type: 'string', format: 'uuid' },
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    name: { type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern },
+    address: { anyOf: [{ type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }, { type: 'null' }] },
+    isActive: { type: 'boolean' }
+  }
+} as const;
+
+const warehouseUpdateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    departmentId: { type: 'string', format: 'uuid' },
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    name: { type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern },
+    address: { anyOf: [{ type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }, { type: 'null' }] },
+    isActive: { type: 'boolean' }
+  }
+} as const;
+
+const zoneCreateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'name'],
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    name: { type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }
+  }
+} as const;
+
+const zoneUpdateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    name: { type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }
+  }
+} as const;
+
+const binCreateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'temperatureBand', 'maxLoadLbs', 'maxLengthIn', 'maxWidthIn', 'maxHeightIn'],
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    temperatureBand: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    maxLoadLbs: { type: 'number', exclusiveMinimum: 0 },
+    maxLengthIn: { type: 'number', exclusiveMinimum: 0 },
+    maxWidthIn: { type: 'number', exclusiveMinimum: 0 },
+    maxHeightIn: { type: 'number', exclusiveMinimum: 0 },
+    isActive: { type: 'boolean' },
+    reason: { anyOf: [{ type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }, { type: 'null' }] }
+  }
+} as const;
+
+const binUpdateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    code: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    temperatureBand: { type: 'string', minLength: 1, maxLength: 64, pattern: nonEmptyStringPattern },
+    maxLoadLbs: { type: 'number', exclusiveMinimum: 0 },
+    maxLengthIn: { type: 'number', exclusiveMinimum: 0 },
+    maxWidthIn: { type: 'number', exclusiveMinimum: 0 },
+    maxHeightIn: { type: 'number', exclusiveMinimum: 0 },
+    isActive: { type: 'boolean' },
+    reason: { anyOf: [{ type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }, { type: 'null' }] }
+  }
+} as const;
+
+const binToggleBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['isActive'],
+  properties: {
+    isActive: { type: 'boolean' },
+    reason: { anyOf: [{ type: 'string', minLength: 1, maxLength: 255, pattern: nonEmptyStringPattern }, { type: 'null' }] }
+  }
+} as const;
+
+type BinPayloadInput = {
+  code?: string;
+  temperatureBand?: string;
+  maxLoadLbs?: number;
+  maxLengthIn?: number;
+  maxWidthIn?: number;
+  maxHeightIn?: number;
+  isActive?: boolean;
+  reason?: string | null;
+};
+
+const normalizeBinBody = (body: BinPayloadInput) => ({
+  code: (body.code ?? '').trim(),
+  temperatureBand: normalizeTemperatureBand(body.temperatureBand, { allowLegacyAliases: true }) ?? '',
   maxLoadLbs: Number(body.maxLoadLbs),
   maxLengthIn: Number(body.maxLengthIn),
   maxWidthIn: Number(body.maxWidthIn),
   maxHeightIn: Number(body.maxHeightIn),
-  isActive: body.isActive === undefined ? true : Boolean(body.isActive),
-  reason: body.reason ? String(body.reason) : null
+  isActive: body.isActive ?? true,
+  reason: typeof body.reason === 'string' ? body.reason.trim() : null
 });
 
 const assertValidBinPayload = (payload: ReturnType<typeof normalizeBinBody>) => {
-  if (!payload.code || !payload.temperatureBand) {
-    const error = new Error('Bin code and temperature band are required') as Error & { statusCode?: number };
+  if (!payload.code) {
+    const error = new Error('Bin code is required') as Error & { statusCode?: number };
+    error.statusCode = 422;
+    throw error;
+  }
+
+  if (!payload.temperatureBand) {
+    const error = new Error(`Temperature band must be one of: ${canonicalTemperatureBandListText}`) as Error & { statusCode?: number };
     error.statusCode = 422;
     throw error;
   }
@@ -68,17 +206,21 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
       `SELECT id, code, name FROM departments ORDER BY name ASC`
     );
 
-    return { departments: departments.rows };
+    return {
+      departments: departments.rows,
+      temperatureBands: [...CANONICAL_TEMPERATURE_BANDS]
+    };
   });
 
   fastify.post('/warehouses', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: { body: warehouseCreateBodySchema }
   }, async (request, reply) => {
     const body = request.body as {
       departmentId: string;
       code: string;
       name: string;
-      address?: string;
+      address?: string | null;
       isActive?: boolean;
     };
 
@@ -107,7 +249,11 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.patch('/warehouses/:warehouseId', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: {
+      params: warehouseIdParamsSchema,
+      body: warehouseUpdateBodySchema
+    }
   }, async (request, reply) => {
     const { warehouseId } = request.params as { warehouseId: string };
     await accessControl.ensureWarehouseAccess(request.authUser!, warehouseId, 'Warehouse is outside your assigned scope');
@@ -116,7 +262,7 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
       departmentId?: string;
       code?: string;
       name?: string;
-      address?: string;
+      address?: string | null;
       isActive?: boolean;
     };
 
@@ -136,16 +282,12 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
       assignments.push(`name = $${values.length}`);
     }
     if (body.address !== undefined) {
-      values.push(body.address.trim());
+      values.push(body.address === null ? null : body.address.trim());
       assignments.push(`address = $${values.length}`);
     }
     if (body.isActive !== undefined) {
       values.push(body.isActive);
       assignments.push(`is_active = $${values.length}`);
-    }
-
-    if (!assignments.length) {
-      return { success: true };
     }
 
     const result = await fastify.db.query(
@@ -173,7 +315,11 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/warehouses/:warehouseId/zones', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: {
+      params: warehouseIdParamsSchema,
+      body: zoneCreateBodySchema
+    }
   }, async (request, reply) => {
     const { warehouseId } = request.params as { warehouseId: string };
     await accessControl.ensureWarehouseAccess(request.authUser!, warehouseId, 'Warehouse is outside your assigned scope');
@@ -203,7 +349,11 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.patch('/zones/:zoneId', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: {
+      params: zoneIdParamsSchema,
+      body: zoneUpdateBodySchema
+    }
   }, async (request, reply) => {
     const { zoneId } = request.params as { zoneId: string };
     const zoneResult = await fastify.db.query<{ warehouse_id: string }>(
@@ -230,10 +380,6 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
       assignments.push(`name = $${values.length}`);
     }
 
-    if (!assignments.length) {
-      return { success: true };
-    }
-
     await fastify.db.query(
       `
         UPDATE zones
@@ -254,7 +400,11 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/zones/:zoneId/bins', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: {
+      params: zoneIdParamsSchema,
+      body: binCreateBodySchema
+    }
   }, async (request, reply) => {
     const { zoneId } = request.params as { zoneId: string };
     const zoneResult = await fastify.db.query<{ warehouse_id: string }>(
@@ -268,7 +418,8 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
 
     await accessControl.ensureWarehouseAccess(request.authUser!, zoneResult.rows[0].warehouse_id, 'Zone is outside your assigned scope');
 
-    const payload = normalizeBinBody(request.body as Record<string, unknown>);
+    const body = request.body as BinPayloadInput;
+    const payload = normalizeBinBody(body);
     assertValidBinPayload(payload);
 
     const client = await fastify.db.connect();
@@ -346,7 +497,11 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.patch('/bins/:binId', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.manage')],
+    schema: {
+      params: binIdParamsSchema,
+      body: binUpdateBodySchema
+    }
   }, async (request, reply) => {
     const { binId } = request.params as { binId: string };
     await accessControl.ensureBinAccess(request.authUser!, binId, 'Bin is outside your assigned warehouse scope');
@@ -373,18 +528,17 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
     }
 
     const current = currentResult.rows[0];
-    const payload = {
-      code: (request.body as Record<string, unknown>).code === undefined ? current.code : String((request.body as Record<string, unknown>).code).trim(),
-      temperatureBand: (request.body as Record<string, unknown>).temperatureBand === undefined
-        ? current.temperature_band
-        : String((request.body as Record<string, unknown>).temperatureBand).trim(),
-      maxLoadLbs: (request.body as Record<string, unknown>).maxLoadLbs === undefined ? Number(current.max_load_lbs) : Number((request.body as Record<string, unknown>).maxLoadLbs),
-      maxLengthIn: (request.body as Record<string, unknown>).maxLengthIn === undefined ? Number(current.max_length_in) : Number((request.body as Record<string, unknown>).maxLengthIn),
-      maxWidthIn: (request.body as Record<string, unknown>).maxWidthIn === undefined ? Number(current.max_width_in) : Number((request.body as Record<string, unknown>).maxWidthIn),
-      maxHeightIn: (request.body as Record<string, unknown>).maxHeightIn === undefined ? Number(current.max_height_in) : Number((request.body as Record<string, unknown>).maxHeightIn),
-      isActive: (request.body as Record<string, unknown>).isActive === undefined ? current.is_active : Boolean((request.body as Record<string, unknown>).isActive),
-      reason: (request.body as Record<string, unknown>).reason ? String((request.body as Record<string, unknown>).reason) : null
-    };
+    const body = request.body as BinPayloadInput;
+    const payload = normalizeBinBody({
+      code: body.code ?? current.code,
+      temperatureBand: body.temperatureBand ?? current.temperature_band,
+      maxLoadLbs: body.maxLoadLbs ?? Number(current.max_load_lbs),
+      maxLengthIn: body.maxLengthIn ?? Number(current.max_length_in),
+      maxWidthIn: body.maxWidthIn ?? Number(current.max_width_in),
+      maxHeightIn: body.maxHeightIn ?? Number(current.max_height_in),
+      isActive: body.isActive ?? current.is_active,
+      reason: body.reason ?? null
+    });
     assertValidBinPayload(payload);
 
     const action = payload.isActive !== current.is_active
@@ -456,10 +610,13 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.get('/warehouses/:warehouseId/tree', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.read')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.read')],
+    schema: {
+      params: warehouseIdParamsSchema
+    }
   }, async (request) => {
     const { warehouseId } = request.params as { warehouseId: string };
-    accessControl.ensureWarehouseAccess(request.authUser!, warehouseId, 'Warehouse tree is outside your assigned scope');
+    await accessControl.ensureWarehouseAccess(request.authUser!, warehouseId, 'Warehouse tree is outside your assigned scope');
     const result = await fastify.db.query(
       `
         SELECT
@@ -480,6 +637,7 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
         LEFT JOIN zones z ON z.warehouse_id = w.id AND z.deleted_at IS NULL
         LEFT JOIN bins b ON b.zone_id = z.id AND b.deleted_at IS NULL
         WHERE w.id = $1
+          AND w.deleted_at IS NULL
         ORDER BY z.code ASC, b.code ASC
       `,
       [warehouseId]
@@ -489,10 +647,14 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.post('/bins/:binId/toggle', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('bins.toggle')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('bins.toggle')],
+    schema: {
+      params: binIdParamsSchema,
+      body: binToggleBodySchema
+    }
   }, async (request) => {
     const { binId } = request.params as { binId: string };
-    const body = request.body as { isActive: boolean; reason?: string };
+    const body = request.body as { isActive: boolean; reason?: string | null };
     await accessControl.ensureBinAccess(request.authUser!, binId, 'Bin is outside your assigned warehouse scope');
 
     const client = await fastify.db.connect();
@@ -525,7 +687,10 @@ export const registerWarehouseRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.get('/bins/:binId/timeline', {
-    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.read')]
+    preHandler: [fastify.authenticate, fastify.requirePermission('warehouses.read')],
+    schema: {
+      params: binIdParamsSchema
+    }
   }, async (request) => {
     const { binId } = request.params as { binId: string };
     await accessControl.ensureBinAccess(request.authUser!, binId, 'Bin timeline is outside your assigned warehouse scope');

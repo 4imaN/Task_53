@@ -7,10 +7,14 @@ import { createIntegrationHarness, loginAsAdmin, loginAsUser, runIntegration } f
 
 const describeIfIntegration = runIntegration ? describe : describe.skip;
 
-const createFixtureItem = async (server: ReturnType<typeof createIntegrationHarness>['server']) => {
+const createFixtureItem = async (
+  server: ReturnType<typeof createIntegrationHarness>['server'],
+  input: { departmentCode?: 'district-ops' | 'north-high' | 'south-middle' } = {}
+) => {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 12);
   const departmentResult = await server.db.query<{ id: string }>(
-    `SELECT id FROM departments WHERE code = 'district-ops'`
+    `SELECT id FROM departments WHERE code = $1`,
+    [input.departmentCode ?? 'district-ops']
   );
   const itemResult = await server.db.query<{ id: string }>(
     `
@@ -294,6 +298,201 @@ describeIfIntegration('catalog API integration', () => {
       }
       await server.db.query(`DELETE FROM items WHERE id = $1`, [itemId]);
       await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns deterministic 404s for well-formed nonexistent catalog item and question identifiers', async () => {
+    const server = harness.server;
+    const { token } = await loginAsAdmin(server);
+    const missingItemId = randomUUID();
+    const missingQuestionId = randomUUID();
+
+    const [detailResponse, favoriteResponse, reviewResponse, questionResponse, answerResponse] = await Promise.all([
+      server.inject({
+        method: 'GET',
+        url: `/api/catalog/items/${missingItemId}`,
+        headers: {
+          authorization: `Bearer ${token}`
+        }
+      }),
+      server.inject({
+        method: 'POST',
+        url: `/api/catalog/items/${missingItemId}/favorite`,
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        payload: {
+          favorite: true
+        }
+      }),
+      server.inject({
+        method: 'POST',
+        url: `/api/catalog/items/${missingItemId}/reviews`,
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        payload: {
+          rating: 5,
+          body: 'Missing item review'
+        }
+      }),
+      server.inject({
+        method: 'POST',
+        url: `/api/catalog/items/${missingItemId}/questions`,
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        payload: {
+          question: 'Missing item question?'
+        }
+      }),
+      server.inject({
+        method: 'POST',
+        url: `/api/catalog/questions/${missingQuestionId}/answers`,
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        payload: {
+          body: 'Missing question answer'
+        }
+      })
+    ]);
+
+    for (const response of [detailResponse, favoriteResponse, reviewResponse, questionResponse]) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        statusCode: 404,
+        message: 'Item not found'
+      });
+      expect(response.body).not.toContain('"item":null');
+    }
+
+    expect(answerResponse.statusCode).toBe(404);
+    expect(answerResponse.json()).toMatchObject({
+      statusCode: 404,
+      message: 'Question not found'
+    });
+    expect(answerResponse.body).not.toContain('violates foreign key');
+    expect(answerResponse.body).not.toContain('Internal server error');
+  });
+
+  it('applies the same department scoping to detail favorites and history as the dedicated endpoints', async () => {
+    const server = harness.server;
+    const userResult = await server.db.query<{ id: string }>(
+      `SELECT id FROM users WHERE username = 'catalog.demo'`
+    );
+    const southDepartmentResult = await server.db.query<{ id: string }>(
+      `SELECT id FROM departments WHERE code = 'south-middle'`
+    );
+    const userId = userResult.rows[0].id;
+    const southDepartmentId = southDepartmentResult.rows[0].id;
+    const districtItemId = await createFixtureItem(server, { departmentCode: 'district-ops' });
+    const southItemId = await createFixtureItem(server, { departmentCode: 'south-middle' });
+
+    try {
+      await server.db.query(
+        `
+          INSERT INTO attribute_rules (user_id, resource_type, resource_id, rule_type, metadata)
+          VALUES ($1, 'department', $2, 'access', '{}'::jsonb)
+          ON CONFLICT DO NOTHING
+        `,
+        [userId, southDepartmentId]
+      );
+      const { token } = await loginAsUser(server, 'catalog.demo', 'CatalogDemo!123');
+
+      for (const itemId of [districtItemId, southItemId]) {
+        const favoriteResponse = await server.inject({
+          method: 'POST',
+          url: `/api/catalog/items/${itemId}/favorite`,
+          headers: { authorization: `Bearer ${token}` },
+          payload: { favorite: true }
+        });
+        expect(favoriteResponse.statusCode).toBe(200);
+
+        const detailResponse = await server.inject({
+          method: 'GET',
+          url: `/api/catalog/items/${itemId}`,
+          headers: { authorization: `Bearer ${token}` }
+        });
+        expect(detailResponse.statusCode).toBe(200);
+      }
+
+      await server.db.query(
+        `
+          DELETE FROM attribute_rules
+          WHERE user_id = $1
+            AND resource_type = 'department'
+            AND resource_id = $2
+            AND rule_type = 'access'
+        `,
+        [userId, southDepartmentId]
+      );
+      const { token: narrowedToken } = await loginAsUser(server, 'catalog.demo', 'CatalogDemo!123');
+
+      const [favoritesResponse, historyResponse, detailResponse] = await Promise.all([
+        server.inject({
+          method: 'GET',
+          url: '/api/catalog/favorites',
+          headers: { authorization: `Bearer ${narrowedToken}` }
+        }),
+        server.inject({
+          method: 'GET',
+          url: '/api/catalog/history',
+          headers: { authorization: `Bearer ${narrowedToken}` }
+        }),
+        server.inject({
+          method: 'GET',
+          url: `/api/catalog/items/${districtItemId}`,
+          headers: { authorization: `Bearer ${narrowedToken}` }
+        })
+      ]);
+
+      expect(favoritesResponse.statusCode).toBe(200);
+      expect(historyResponse.statusCode).toBe(200);
+      expect(detailResponse.statusCode).toBe(200);
+
+      const favorites = favoritesResponse.json() as Array<{ id: string }>;
+      const history = historyResponse.json() as Array<{ item_id: string }>;
+      const detail = detailResponse.json() as {
+        favorites: Array<{ id: string }>;
+        history: Array<{ item_id: string }>;
+      };
+
+      const favoriteIds = new Set(favorites.map((entry) => entry.id));
+      const historyIds = new Set(history.map((entry) => entry.item_id));
+      const detailFavoriteIds = new Set(detail.favorites.map((entry) => entry.id));
+      const detailHistoryIds = new Set(detail.history.map((entry) => entry.item_id));
+
+      expect(favoriteIds.has(districtItemId)).toBe(true);
+      expect(favoriteIds.has(southItemId)).toBe(false);
+      expect(historyIds.has(districtItemId)).toBe(true);
+      expect(historyIds.has(southItemId)).toBe(false);
+      expect(detailFavoriteIds.has(districtItemId)).toBe(true);
+      expect(detailFavoriteIds.has(southItemId)).toBe(false);
+      expect(detailHistoryIds.has(districtItemId)).toBe(true);
+      expect(detailHistoryIds.has(southItemId)).toBe(false);
+      expect(detailFavoriteIds.has(districtItemId)).toBe(favoriteIds.has(districtItemId));
+      expect(detailHistoryIds.has(districtItemId)).toBe(historyIds.has(districtItemId));
+    } finally {
+      await server.db.query(
+        `DELETE FROM favorites WHERE user_id = $1 AND item_id = ANY($2::uuid[])`,
+        [userId, [districtItemId, southItemId]]
+      );
+      await server.db.query(
+        `DELETE FROM browsing_history WHERE user_id = $1 AND item_id = ANY($2::uuid[])`,
+        [userId, [districtItemId, southItemId]]
+      );
+      await server.db.query(
+        `
+          DELETE FROM attribute_rules
+          WHERE user_id = $1
+            AND resource_type = 'department'
+            AND resource_id = $2
+            AND rule_type = 'access'
+        `,
+        [userId, southDepartmentId]
+      );
+      await server.db.query(`DELETE FROM items WHERE id = ANY($1::uuid[])`, [[districtItemId, southItemId]]);
     }
   });
 });

@@ -192,7 +192,33 @@ export class LoginPageComponent implements OnInit {
       });
       await this.router.navigateByUrl(this.session.homeUrl());
     } catch (error) {
+      this.applyAuthFailureHints(error);
       this.authErrorMessage = describeLoginRequestFailure(error);
+    }
+  }
+
+  private applyAuthFailureHints(error: unknown) {
+    if (!error || typeof error !== 'object') {
+      return;
+    }
+
+    const envelope = error as { error?: unknown };
+    if (!envelope.error || typeof envelope.error !== 'object') {
+      return;
+    }
+
+    const details = envelope.error as { captchaRequired?: unknown; lockedUntil?: unknown };
+    if (details.captchaRequired === true) {
+      this.captchaRequired = true;
+      this.lockedUntil = typeof details.lockedUntil === 'string' ? details.lockedUntil : null;
+      if (!this.captchaId) {
+        void this.loadCaptcha();
+      }
+      return;
+    }
+
+    if (typeof details.lockedUntil === 'string') {
+      this.lockedUntil = details.lockedUntil;
     }
   }
 }

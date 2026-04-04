@@ -23,19 +23,19 @@ export const actorConfigs: ActorConfig[] = [
   {
     key: 'moderator',
     title: 'Moderator Access',
-    subtitle: 'Abuse report triage, reporter-safe case updates, and moderation queue handling.',
-    note: 'Use this account to test moderation workflows and inbox case notifications.'
+    subtitle: 'Abuse report triage, reporter-safe case updates, department queue handling, and scoped search.',
+    note: 'Use this account to test department moderation workflows, scoped search visibility, and inbox case notifications.'
   },
   {
     key: 'catalog-editor',
     title: 'Catalog Editor Access',
-    subtitle: 'Catalog detail maintenance, reviews, questions, favorites, and content management.',
-    note: 'Use this account to manage item content, answer questions, and work through catalog quality tasks.'
+    subtitle: 'Catalog detail maintenance, reviews, questions, favorites, content management, and department-scoped search.',
+    note: 'Use this account to manage item content, answer questions, and work through department-scoped catalog quality tasks.'
   },
   {
     key: 'warehouse-clerk',
     title: 'Warehouse Clerk Access',
-    subtitle: 'Barcode-driven inventory lookup, receiving, moving, picking, and assigned warehouse tasks.',
-    note: 'Use this account to validate scan-driven workflows and assigned warehouse visibility rules.'
+    subtitle: 'Barcode-driven inventory lookup, receiving, moving, picking, and warehouse-scoped task queues.',
+    note: 'Use this account to validate scan-driven workflows and assigned-warehouse visibility rules.'
   }
 ];

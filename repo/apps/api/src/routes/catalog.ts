@@ -1,12 +1,10 @@
-import { mkdir, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
-import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { randomUUID } from 'node:crypto';
-import { config } from '../config.js';
 import { sha256Buffer, sha256File } from '../utils/checksum.js';
 import { AccessControlService } from '../services/access-control.service.js';
 import type { AuthenticatedUser } from '../types/fastify.js';
+import { ReviewImageStorageService } from '../services/review-image-storage.service.js';
+import { canonicalTemperatureBandListText, normalizeTemperatureBand } from '../domain/temperature-band.js';
 
 const itemParamsSchema = {
   type: 'object',
@@ -163,6 +161,7 @@ const trimHistory = async (fastify: FastifyInstance, userId: string) => {
 
 export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
   const accessControl = new AccessControlService(fastify);
+  const reviewImageStorage = new ReviewImageStorageService(fastify);
   const resolveDepartmentFilter = async (user: AuthenticatedUser, columnRef = 'i.department_id') => {
     const allowedDepartmentIds = await accessControl.getAllowedDepartmentIds(user);
     if (allowedDepartmentIds === null) {
@@ -174,6 +173,46 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
     }
 
     return { sql: ` AND ${columnRef} = ANY($1::uuid[])`, values: [allowedDepartmentIds] as unknown[] };
+  };
+  const listScopedFavorites = async (user: AuthenticatedUser, limit?: number) => {
+    const allowedDepartmentIds = await accessControl.getAllowedDepartmentIds(user);
+    const values: unknown[] = [user.id, allowedDepartmentIds];
+    const limitSql = typeof limit === 'number'
+      ? `\n        LIMIT $${values.push(limit)}`
+      : '';
+
+    const result = await fastify.db.query(
+      `
+        SELECT i.id, i.sku, i.name, i.average_rating, i.rating_count, f.created_at
+        FROM favorites f
+        JOIN items i ON i.id = f.item_id
+        WHERE f.user_id = $1
+          AND i.deleted_at IS NULL
+          AND ($2::uuid[] IS NULL OR i.department_id = ANY($2::uuid[]))
+        ORDER BY f.created_at DESC${limitSql}
+      `,
+      values
+    );
+
+    return result.rows;
+  };
+  const listScopedHistory = async (user: AuthenticatedUser, limit = 20) => {
+    const allowedDepartmentIds = await accessControl.getAllowedDepartmentIds(user);
+    const result = await fastify.db.query(
+      `
+        SELECT bh.id, bh.viewed_at, i.id AS item_id, i.sku, i.name
+        FROM browsing_history bh
+        JOIN items i ON i.id = bh.item_id
+        WHERE bh.user_id = $1
+          AND i.deleted_at IS NULL
+          AND ($2::uuid[] IS NULL OR i.department_id = ANY($2::uuid[]))
+        ORDER BY bh.viewed_at DESC
+        LIMIT $3
+      `,
+      [user.id, allowedDepartmentIds, limit]
+    );
+
+    return result.rows;
   };
 
   fastify.post('/catalog/reviews/:reviewId/images', {
@@ -200,43 +239,23 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
       return reply.code(400).send({ message: 'Image file is required' });
     }
 
-    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-    if (!allowedMimeTypes.has(file.mimetype)) {
-      return reply.code(422).send({ message: 'Unsupported image format' });
-    }
+    const storedUpload = await reviewImageStorage.storeUpload(file);
 
-    const buffer = await file.toBuffer();
-    if (buffer.byteLength > 10 * 1024 * 1024) {
-      return reply.code(422).send({ message: 'Image exceeds 10 MB limit' });
-    }
-
-    const extension = file.filename.includes('.') ? file.filename.split('.').pop() : 'bin';
-    const storageDir = path.join(
-      config.uploadRoot,
-      'review-images',
-      new Date().toISOString().slice(0, 10)
-    );
-    await mkdir(storageDir, { recursive: true });
-
-    const filename = `${randomUUID()}.${extension}`;
-    const filePath = path.join(storageDir, filename);
-    await writeFile(filePath, buffer);
-
-    const checksum = sha256Buffer(buffer);
+    const checksum = sha256Buffer(storedUpload.buffer);
     const imageResult = await fastify.db.query<{ id: string }>(
       `
         INSERT INTO review_images (review_id, file_path, checksum_sha256, mime_type, file_size_bytes)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id
       `,
-      [reviewId, filePath, checksum, file.mimetype, buffer.byteLength]
+      [reviewId, storedUpload.filePath, checksum, storedUpload.mimeType, storedUpload.buffer.byteLength]
     );
 
     request.auditContext = {
       actionType: 'review_image_upload',
       resourceType: 'review',
       resourceId: reviewId,
-      details: { imageId: imageResult.rows[0].id, mimeType: file.mimetype, fileSizeBytes: buffer.byteLength }
+      details: { imageId: imageResult.rows[0].id, mimeType: storedUpload.mimeType, fileSizeBytes: storedUpload.buffer.byteLength }
     };
 
     return reply.code(201).send({ imageId: imageResult.rows[0].id });
@@ -330,38 +349,11 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
   });
 
   fastify.get('/catalog/favorites', { preHandler: fastify.authenticate }, async (request) => {
-    const allowedDepartmentIds = await accessControl.getAllowedDepartmentIds(request.authUser!);
-    const result = await fastify.db.query(
-      `
-        SELECT i.id, i.sku, i.name, i.average_rating, i.rating_count, f.created_at
-        FROM favorites f
-        JOIN items i ON i.id = f.item_id
-        WHERE f.user_id = $1
-          AND ($2::uuid[] IS NULL OR i.department_id = ANY($2::uuid[]))
-        ORDER BY f.created_at DESC
-      `,
-      [request.authUser!.id, allowedDepartmentIds]
-    );
-
-    return result.rows;
+    return listScopedFavorites(request.authUser!);
   });
 
   fastify.get('/catalog/history', { preHandler: fastify.authenticate }, async (request) => {
-    const allowedDepartmentIds = await accessControl.getAllowedDepartmentIds(request.authUser!);
-    const result = await fastify.db.query(
-      `
-        SELECT bh.id, bh.viewed_at, i.id AS item_id, i.sku, i.name
-        FROM browsing_history bh
-        JOIN items i ON i.id = bh.item_id
-        WHERE bh.user_id = $1
-          AND ($2::uuid[] IS NULL OR i.department_id = ANY($2::uuid[]))
-        ORDER BY bh.viewed_at DESC
-        LIMIT 20
-      `,
-      [request.authUser!.id, allowedDepartmentIds]
-    );
-
-    return result.rows;
+    return listScopedHistory(request.authUser!, 20);
   });
 
   fastify.post('/catalog/items/:itemId/favorite', {
@@ -556,7 +548,7 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
   fastify.get('/catalog/items/:itemId', {
     preHandler: fastify.authenticate,
     schema: { params: itemParamsSchema }
-  }, async (request) => {
+  }, async (request, reply) => {
     const { itemId } = request.params as { itemId: string };
     await accessControl.ensureItemAccess(request.authUser!, itemId);
 
@@ -581,7 +573,7 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
     );
 
     if (!itemResult.rowCount) {
-      return { item: null, reviews: [], questions: [], favorites: [], history: [] };
+      return reply.code(404).send({ message: 'Item not found' });
     }
 
     await fastify.db.query(
@@ -664,36 +656,17 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
       [itemId]
     );
 
-    const favoritesResult = await fastify.db.query(
-      `
-        SELECT i.id, i.sku, i.name, f.created_at
-        FROM favorites f
-        JOIN items i ON i.id = f.item_id
-        WHERE f.user_id = $1
-        ORDER BY f.created_at DESC
-        LIMIT 10
-      `,
-      [request.authUser!.id]
-    );
-
-    const historyResult = await fastify.db.query(
-      `
-        SELECT bh.id, bh.viewed_at, i.id AS item_id, i.sku, i.name
-        FROM browsing_history bh
-        JOIN items i ON i.id = bh.item_id
-        WHERE bh.user_id = $1
-        ORDER BY bh.viewed_at DESC
-        LIMIT 10
-      `,
-      [request.authUser!.id]
-    );
+    const [favorites, history] = await Promise.all([
+      listScopedFavorites(request.authUser!, 10),
+      listScopedHistory(request.authUser!, 10)
+    ]);
 
     return {
       item: itemResult.rows[0],
       reviews: reviewResult.rows,
       questions: questionResult.rows,
-      favorites: favoritesResult.rows,
-      history: historyResult.rows
+      favorites,
+      history
     };
   });
 
@@ -745,9 +718,9 @@ export const registerCatalogRoutes = async (fastify: FastifyInstance) => {
     }
 
     if (body.temperatureBand !== undefined) {
-      const temperatureBand = String(body.temperatureBand).trim();
+      const temperatureBand = normalizeTemperatureBand(String(body.temperatureBand), { allowLegacyAliases: true });
       if (!temperatureBand) {
-        return reply.code(422).send({ message: 'Temperature band is required' });
+        return reply.code(422).send({ message: `Temperature band must be one of: ${canonicalTemperatureBandListText}` });
       }
       push('temperature_band', temperatureBand);
     }

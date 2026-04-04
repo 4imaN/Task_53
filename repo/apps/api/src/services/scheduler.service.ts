@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { config } from '../config.js';
 
 type JobSummary = Record<string, unknown>;
 
@@ -49,12 +50,16 @@ export class SchedulerService {
     const archivalSummary = await this.runTrackedJob('scheduler_nightly', 'document_archival', async () => {
       return this.archiveCompletedDocuments(periodEnd);
     });
+    const webhookRetentionSummary = await this.runTrackedJob('scheduler_nightly', 'webhook_delivery_retention', async () => {
+      return this.purgeExpiredWebhookDeliveries(referenceDate);
+    });
 
     return {
       periodStart,
       periodEnd,
       metricsSummary,
-      archivalSummary
+      archivalSummary,
+      webhookRetentionSummary
     };
   }
 
@@ -369,5 +374,22 @@ export class SchedulerService {
     } finally {
       client.release();
     }
+  }
+
+  private async purgeExpiredWebhookDeliveries(referenceDate: Date) {
+    const cutoff = new Date(referenceDate.getTime() - config.webhookDeliveryRetentionDays * MS_PER_DAY);
+    const result = await this.fastify.db.query(
+      `
+        DELETE FROM webhook_deliveries
+        WHERE created_at < $1
+      `,
+      [cutoff.toISOString()]
+    );
+
+    return {
+      deletedCount: result.rowCount ?? 0,
+      cutoff: cutoff.toISOString(),
+      retentionDays: config.webhookDeliveryRetentionDays
+    };
   }
 }

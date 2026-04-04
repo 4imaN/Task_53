@@ -118,9 +118,7 @@ type BinForm = {
           <label>
             <span>Temperature band</span>
             <select class="form-input" [(ngModel)]="binForm.temperatureBand">
-              <option value="ambient">ambient</option>
-              <option value="cold">cold</option>
-              <option value="frozen">frozen</option>
+              <option *ngFor="let temperatureBand of temperatureBands" [value]="temperatureBand">{{ temperatureBand }}</option>
             </select>
           </label>
           <label>
@@ -246,6 +244,7 @@ export class WarehousePageComponent implements OnInit {
 
   warehouses: any[] = [];
   departments: any[] = [];
+  temperatureBands: string[] = [];
   treeRows: any[] = [];
   zoneGroups: Array<{ zoneId: string; zoneCode: string; zoneName: string; bins: any[] }> = [];
   selectedWarehouseId = '';
@@ -285,6 +284,10 @@ export class WarehousePageComponent implements OnInit {
       ]);
       this.warehouses = warehouses;
       this.departments = options.departments ?? [];
+      this.temperatureBands = options.temperatureBands ?? [];
+      if (this.temperatureBands.length && !this.temperatureBands.includes(this.binForm.temperatureBand)) {
+        this.binForm.temperatureBand = this.temperatureBands[0];
+      }
 
       if (!this.selectedWarehouseId && this.warehouses[0]) {
         this.selectedWarehouseId = this.warehouses[0].id;

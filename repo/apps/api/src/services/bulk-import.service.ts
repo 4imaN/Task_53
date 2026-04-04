@@ -1,10 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import * as XLSX from 'xlsx';
 import type { AuthenticatedUser } from '../types/fastify.js';
+import {
+  canonicalTemperatureBandListText,
+  normalizeTemperatureBand
+} from '../domain/temperature-band.js';
 
 type ParsedRow = {
   rowNumber: number;
   values: Record<string, string>;
+};
+
+type ConflictDetail = {
+  field: 'sku' | 'barcode';
+  value: string;
+  scope: 'file' | 'accessible' | 'restricted';
+  departmentCode?: string;
+  message: string;
 };
 
 type RowOutcome = {
@@ -12,6 +24,7 @@ type RowOutcome = {
   outcome: 'valid' | 'warning' | 'error';
   message: string;
   payload: Record<string, unknown>;
+  conflicts?: ConflictDetail[];
 };
 
 type PrecheckSummary = {
@@ -43,11 +56,19 @@ type DepartmentScope = {
   codes: Set<string>;
 };
 
+type ExistingConflictRow = {
+  value: string;
+  department_id: string;
+  department_code: string;
+};
+
 const REQUIRED_HEADERS = ['department_code', 'sku', 'name', 'unit_of_measure', 'temperature_band', 'barcode'];
 const ALLOWED_UNITS = new Set(['each', 'box', 'case', 'pallet']);
-const ALLOWED_TEMPERATURES = new Set(['ambient', 'chilled', 'frozen']);
 const NUMERIC_FIELDS = ['weight_lbs', 'length_in', 'width_in', 'height_in'];
-const bulkError = (statusCode: number, message: string) => Object.assign(new Error(message), { statusCode });
+const bulkError = (statusCode: number, message: string, details?: Record<string, unknown>) => Object.assign(new Error(message), {
+  statusCode,
+  details
+});
 
 export class BulkImportService {
   constructor(private readonly fastify: FastifyInstance) {}
@@ -136,7 +157,15 @@ export class BulkImportService {
       [allowedDepartmentIds]
     );
 
-    const rows = result.rows.map((row) => headers.map((header) => row[header as keyof typeof row] ?? ''));
+    const rows = result.rows.map((row) => {
+      const canonicalTemperatureBand = normalizeTemperatureBand(row.temperature_band, { allowLegacyAliases: true });
+      const normalizedRow = {
+        ...row,
+        temperature_band: canonicalTemperatureBand ?? String(row.temperature_band).trim().toLowerCase()
+      };
+
+      return headers.map((header) => normalizedRow[header as keyof typeof normalizedRow] ?? '');
+    });
 
     if (format === 'xlsx') {
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -190,19 +219,18 @@ export class BulkImportService {
       };
     }
 
+    const batchJobId = await this.createBatchJob({
+      createdBy: userId,
+      filename: file.filename,
+      status: 'processing',
+      summary: precheck.summary,
+      departmentIds: jobDepartmentIds
+    });
+
+    const importedRows: RowOutcome[] = [];
     const client = await this.fastify.db.connect();
     try {
       await client.query('BEGIN');
-      const batchJobResult = await client.query<{ id: string }>(
-        `
-          INSERT INTO batch_jobs (job_type, entity_type, created_by, filename, status, summary, department_ids)
-          VALUES ('import', 'catalog_item', $1, $2, 'processing', $3::jsonb, $4::uuid[])
-          RETURNING id
-        `,
-        [userId, file.filename, JSON.stringify(precheck.summary), jobDepartmentIds]
-      );
-      const batchJobId = batchJobResult.rows[0].id;
-
       for (const row of precheck.rows) {
         const payload = row.payload as Record<string, string>;
         const itemResult = await client.query<{ id: string }>(
@@ -252,7 +280,12 @@ export class BulkImportService {
         );
 
         if (!itemResult.rowCount) {
-          throw bulkError(422, `Row ${row.rowNumber} conflicts with an existing item or is outside your department scope`);
+          const conflictMessage = row.conflicts?.find((conflict) => conflict.field === 'sku')?.message
+            ?? 'SKU conflicts with an existing catalog record';
+          throw bulkError(422, `Row ${row.rowNumber} ${conflictMessage}`, {
+            rowNumber: row.rowNumber,
+            payload: row.payload
+          });
         }
 
         const barcodeResult = await client.query<{ id: string }>(
@@ -266,34 +299,33 @@ export class BulkImportService {
         );
 
         if (!barcodeResult.rowCount) {
-          throw bulkError(422, `Row ${row.rowNumber} conflicts with an existing barcode`);
+          const conflictMessage = row.conflicts?.find((conflict) => conflict.field === 'barcode')?.message
+            ?? 'Barcode conflicts with an existing catalog record';
+          throw bulkError(422, `Row ${row.rowNumber} ${conflictMessage}`, {
+            rowNumber: row.rowNumber,
+            payload: row.payload
+          });
         }
-
-        await client.query(
-          `
-            INSERT INTO batch_job_results (batch_job_id, row_number, outcome, message, payload)
-            VALUES ($1, $2, $3, $4, $5::jsonb)
-          `,
-          [batchJobId, row.rowNumber, 'imported', 'Item imported successfully', JSON.stringify(row.payload)]
-        );
+        importedRows.push({
+          rowNumber: row.rowNumber,
+          outcome: 'valid',
+          message: 'Item imported successfully',
+          payload: row.payload
+        });
       }
 
-      await client.query(
-        `
-          UPDATE batch_jobs
-          SET status = 'completed',
-              summary = $2::jsonb
-          WHERE id = $1
-        `,
-        [
-          batchJobId,
-          JSON.stringify({
-            ...precheck.summary,
-            importedRows: precheck.summary.validRows + precheck.summary.warningRows
-          })
-        ]
-      );
       await client.query('COMMIT');
+
+      await this.persistBatchJobRows(batchJobId, importedRows.map((row) => ({
+        rowNumber: row.rowNumber,
+        outcome: 'imported',
+        message: row.message,
+        payload: row.payload
+      })));
+      await this.updateBatchJob(batchJobId, 'completed', {
+        ...precheck.summary,
+        importedRows: precheck.summary.validRows + precheck.summary.warningRows
+      });
 
       return {
         jobId: batchJobId,
@@ -302,7 +334,27 @@ export class BulkImportService {
       };
     } catch (error) {
       await client.query('ROLLBACK');
-      throw error;
+      const handledError = error as Error & {
+        statusCode?: number;
+        details?: {
+          rowNumber?: number;
+          payload?: Record<string, unknown>;
+        };
+      };
+      const failedRowNumber = handledError.details?.rowNumber;
+      const failureMessage = handledError.message || 'Catalog import failed';
+
+      await this.persistBatchJobRows(batchJobId, this.buildFailedImportRows(precheck.rows, failedRowNumber, failureMessage));
+      await this.updateBatchJob(batchJobId, 'failed', {
+        ...precheck.summary,
+        failedRow: failedRowNumber ?? null,
+        errorMessage: failureMessage
+      });
+
+      throw bulkError(handledError.statusCode ?? 500, failureMessage, {
+        ...(handledError.details ?? {}),
+        jobId: batchJobId
+      });
     } finally {
       client.release();
     }
@@ -372,6 +424,31 @@ export class BulkImportService {
     rows: RowOutcome[];
     departmentIds: string[];
   }) {
+    const batchJobId = await this.createBatchJob({
+      createdBy: input.createdBy,
+      filename: input.filename,
+      status: input.status,
+      summary: input.summary,
+      departmentIds: input.departmentIds
+    });
+
+    await this.persistBatchJobRows(batchJobId, input.rows.map((row) => ({
+      rowNumber: row.rowNumber,
+      outcome: row.outcome,
+      message: row.message,
+      payload: row.payload
+    })));
+
+    return batchJobId;
+  }
+
+  private async createBatchJob(input: {
+    createdBy: string;
+    filename: string;
+    status: string;
+    summary: Record<string, unknown>;
+    departmentIds: string[];
+  }) {
     const batchJobResult = await this.fastify.db.query<{ id: string }>(
       `
         INSERT INTO batch_jobs (job_type, entity_type, created_by, filename, status, summary, department_ids)
@@ -381,8 +458,16 @@ export class BulkImportService {
       [input.createdBy, input.filename, input.status, JSON.stringify(input.summary), input.departmentIds]
     );
 
-    const batchJobId = batchJobResult.rows[0].id;
-    for (const row of input.rows) {
+    return batchJobResult.rows[0].id;
+  }
+
+  private async persistBatchJobRows(batchJobId: string, rows: Array<{
+    rowNumber: number;
+    outcome: string;
+    message: string;
+    payload: Record<string, unknown>;
+  }>) {
+    for (const row of rows) {
       await this.fastify.db.query(
         `
           INSERT INTO batch_job_results (batch_job_id, row_number, outcome, message, payload)
@@ -391,8 +476,29 @@ export class BulkImportService {
         [batchJobId, row.rowNumber, row.outcome, row.message, JSON.stringify(row.payload)]
       );
     }
+  }
 
-    return batchJobId;
+  private async updateBatchJob(batchJobId: string, status: string, summary: Record<string, unknown>) {
+    await this.fastify.db.query(
+      `
+        UPDATE batch_jobs
+        SET status = $2,
+            summary = $3::jsonb
+        WHERE id = $1
+      `,
+      [batchJobId, status, JSON.stringify(summary)]
+    );
+  }
+
+  private buildFailedImportRows(rows: RowOutcome[], failedRowNumber: number | undefined, failureMessage: string) {
+    return rows.map((row) => ({
+      rowNumber: row.rowNumber,
+      outcome: row.rowNumber === failedRowNumber ? 'error' : 'rolled_back',
+      message: row.rowNumber === failedRowNumber
+        ? failureMessage
+        : 'Rolled back after import failed before commit',
+      payload: row.payload
+    }));
   }
 
   private async validateCatalogRows(parsedRows: ParsedRow[], departmentScope: DepartmentScope): Promise<RowOutcome[]> {
@@ -408,35 +514,34 @@ export class BulkImportService {
       `,
       [departmentScope.ids]
     );
-    const existingItemsResult = await this.fastify.db.query<{ sku: string }>(
+    const existingItemsResult = await this.fastify.db.query<ExistingConflictRow>(
       `
-        SELECT sku
-        FROM items
-        WHERE deleted_at IS NULL
-          AND ($1::uuid[] IS NULL OR department_id = ANY($1::uuid[]))
-      `,
-      [departmentScope.ids]
+        SELECT i.sku AS value, i.department_id::text AS department_id, d.code AS department_code
+        FROM items i
+        JOIN departments d ON d.id = i.department_id
+        WHERE i.deleted_at IS NULL
+      `
     );
-    const existingBarcodesResult = await this.fastify.db.query<{ barcode: string }>(
+    const existingBarcodesResult = await this.fastify.db.query<ExistingConflictRow>(
       `
-        SELECT b.barcode
+        SELECT b.barcode AS value, i.department_id::text AS department_id, d.code AS department_code
         FROM barcodes b
         JOIN items i ON i.id = b.item_id
+        JOIN departments d ON d.id = i.department_id
         WHERE i.deleted_at IS NULL
-          AND ($1::uuid[] IS NULL OR i.department_id = ANY($1::uuid[]))
-      `,
-      [departmentScope.ids]
+      `
     );
 
     const departmentCodes = new Set(departmentResult.rows.map((row) => row.code.toLowerCase()));
-    const existingSkus = new Set(existingItemsResult.rows.map((row) => row.sku.toLowerCase()));
-    const existingBarcodes = new Set(existingBarcodesResult.rows.map((row) => row.barcode));
+    const existingSkus = this.buildConflictMap(existingItemsResult.rows);
+    const existingBarcodes = this.buildConflictMap(existingBarcodesResult.rows);
     const seenSkus = new Set<string>();
     const seenBarcodes = new Set<string>();
 
     return parsedRows.map((row) => {
       const normalized = this.normalizeRow(row.values);
       const messages: string[] = [];
+      const conflicts: ConflictDetail[] = [];
       let outcome: RowOutcome['outcome'] = 'valid';
 
       for (const header of REQUIRED_HEADERS) {
@@ -460,9 +565,18 @@ export class BulkImportService {
         messages.push('Invalid unit of measure');
       }
 
-      if (normalized.temperature_band && !ALLOWED_TEMPERATURES.has(normalized.temperature_band)) {
+      const canonicalTemperatureBand = normalizeTemperatureBand(normalized.temperature_band, { allowLegacyAliases: true });
+      if (normalized.temperature_band && !canonicalTemperatureBand) {
         outcome = 'error';
-        messages.push('Invalid temperature band');
+        messages.push(`Invalid temperature band (allowed: ${canonicalTemperatureBandListText})`);
+      } else if (canonicalTemperatureBand) {
+        if (normalized.temperature_band !== canonicalTemperatureBand) {
+          if (outcome === 'valid') {
+            outcome = 'warning';
+          }
+          messages.push(`Temperature band '${normalized.temperature_band}' was normalized to '${canonicalTemperatureBand}'`);
+        }
+        normalized.temperature_band = canonicalTemperatureBand;
       }
 
       for (const field of NUMERIC_FIELDS) {
@@ -483,17 +597,37 @@ export class BulkImportService {
 
       const skuKey = normalized.sku.toLowerCase();
       if (normalized.sku) {
-        if (seenSkus.has(skuKey) || existingSkus.has(skuKey)) {
+        if (seenSkus.has(skuKey)) {
           outcome = 'error';
-          messages.push('Duplicate SKU');
+          const conflict = this.buildFileConflict('sku', normalized.sku, 'Duplicate SKU within the upload file');
+          conflicts.push(conflict);
+          messages.push(conflict.message);
+        } else {
+          const existingConflict = existingSkus.get(skuKey);
+          if (existingConflict) {
+            outcome = 'error';
+            const conflict = this.buildExistingConflict('sku', normalized.sku, existingConflict, departmentScope);
+            conflicts.push(conflict);
+            messages.push(conflict.message);
+          }
         }
         seenSkus.add(skuKey);
       }
 
       if (normalized.barcode) {
-        if (seenBarcodes.has(normalized.barcode) || existingBarcodes.has(normalized.barcode)) {
+        if (seenBarcodes.has(normalized.barcode)) {
           outcome = 'error';
-          messages.push('Duplicate barcode');
+          const conflict = this.buildFileConflict('barcode', normalized.barcode, 'Duplicate barcode within the upload file');
+          conflicts.push(conflict);
+          messages.push(conflict.message);
+        } else {
+          const existingConflict = existingBarcodes.get(normalized.barcode);
+          if (existingConflict) {
+            outcome = 'error';
+            const conflict = this.buildExistingConflict('barcode', normalized.barcode, existingConflict, departmentScope);
+            conflicts.push(conflict);
+            messages.push(conflict.message);
+          }
         }
         seenBarcodes.add(normalized.barcode);
       }
@@ -509,9 +643,48 @@ export class BulkImportService {
         rowNumber: row.rowNumber,
         outcome,
         message: messages.join('; ') || 'Ready for import',
-        payload: normalized
+        payload: normalized,
+        conflicts: conflicts.length ? conflicts : undefined
       };
     });
+  }
+
+  private buildConflictMap(rows: ExistingConflictRow[]) {
+    return new Map(rows.map((row) => [row.value.toLowerCase(), row]));
+  }
+
+  private buildFileConflict(field: ConflictDetail['field'], value: string, message: string): ConflictDetail {
+    return {
+      field,
+      value,
+      scope: 'file',
+      message
+    };
+  }
+
+  private buildExistingConflict(
+    field: ConflictDetail['field'],
+    value: string,
+    row: ExistingConflictRow,
+    departmentScope: DepartmentScope
+  ): ConflictDetail {
+    const isAccessible = departmentScope.ids === null || departmentScope.ids.includes(row.department_id);
+    if (isAccessible) {
+      return {
+        field,
+        value,
+        scope: 'accessible',
+        departmentCode: row.department_code,
+        message: `${field.toUpperCase()} conflicts with an existing catalog record in department ${row.department_code}`
+      };
+    }
+
+    return {
+      field,
+      value,
+      scope: 'restricted',
+      message: `${field.toUpperCase()} conflicts with an existing catalog record outside your accessible departments`
+    };
   }
 
   private summarize(rows: RowOutcome[]): PrecheckSummary {

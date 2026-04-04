@@ -120,6 +120,17 @@ test('search workspace supports filters, time range, sorting, pagination, and sa
   await expect(page.getByText(/loaded 11-20 of 35/i)).toBeVisible();
 });
 
+test('search workspace surfaces a typed saved-view quota conflict cleanly', async ({ page }) => {
+  await installMockApi(page, { savedViewLimitReached: true });
+  await login(page, 'warehouse-clerk');
+  await page.goto('/search');
+
+  await page.getByPlaceholder('Saved view name').fill('Ops overflow');
+  await page.getByRole('button', { name: /save current view/i }).click();
+
+  await expect(page.getByText(/saved view limit reached\. update an existing view or delete one before creating another\./i)).toBeVisible();
+});
+
 test('topbar command search filters suggestions, routes to command targets, and submits record searches', async ({ page }) => {
   await installMockApi(page);
   await login(page, 'warehouse-clerk');
@@ -194,6 +205,40 @@ test('inventory supports keyboard lookup and pick execution', async ({ page }) =
   await expect(page.getByText(/matched storage tote in central warehouse/i)).toBeVisible();
   await page.getByRole('button', { name: /^pick$/i }).click();
   await expect(page.getByText(/pick completed/i)).toBeVisible();
+});
+
+test('inventory supports first receipt from an item-only scan result', async ({ page }) => {
+  await installMockApi(page);
+  await login(page, 'warehouse-clerk');
+  await page.goto('/inventory');
+  await page.getByPlaceholder('barcode, lot, or SKU').fill('BC-FIRST-RECEIPT');
+  await page.getByRole('button', { name: /lookup/i }).click();
+
+  await expect(page.locator('.panel.item-highlight').getByText(/No visible lot is currently on hand/i)).toBeVisible();
+  await page.locator('select.inventory-select').first().selectOption('wh-2');
+  await page.getByPlaceholder('New or existing lot code').fill('FIRST-LOT-999');
+  await page.locator('select.inventory-select').nth(1).selectOption('bin-3');
+  await page.getByRole('button', { name: /^receive$/i }).click();
+
+  await expect(page.getByText(/receive completed/i)).toBeVisible();
+  await expect(page.getByText(/lot FIRST-LOT-999 · bin BIN-B1/i)).toBeVisible();
+});
+
+test('inventory requires operator disambiguation when multiple visible lots match the scanned code', async ({ page }) => {
+  await installMockApi(page);
+  await login(page, 'warehouse-clerk');
+  await page.goto('/inventory');
+  await page.getByPlaceholder('barcode, lot, or SKU').fill('BC-MULTI-LOT');
+  await page.getByRole('button', { name: /lookup/i }).click();
+
+  await expect(page.getByRole('heading', { name: /choose matching lot/i })).toBeVisible();
+  await expect(page.locator('.panel.item-highlight').getByText(/Multiple visible lots matched this code/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /pick/i })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /LOT-B · BIN-A2 · Central Warehouse/i }).click();
+
+  await expect(page.getByText(/selected LOT-B in Central Warehouse/i)).toBeVisible();
+  await expect(page.getByText(/lot LOT-B · bin BIN-A2 · 7 on hand/i)).toBeVisible();
 });
 
 test('inventory camera path shows unsupported-browser fallback cleanly', async ({ page }) => {

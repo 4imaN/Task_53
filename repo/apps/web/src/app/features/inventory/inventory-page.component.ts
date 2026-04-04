@@ -1,10 +1,28 @@
 import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../../core/services/api.service';
+import {
+  ApiService,
+  type InventoryScanItem,
+  type InventoryScanLotMatch,
+  type InventoryScanResult,
+  type InventoryScanWarehouseOption
+} from '../../core/services/api.service';
+import { SessionStore } from '../../core/auth/session.store';
 import { detectCameraCapability } from './inventory-camera-utils';
 
 type CameraState = 'idle' | 'starting' | 'active' | 'unsupported' | 'denied' | 'failed' | 'cancelled';
+
+type WarehouseTreeBin = {
+  warehouse_id: string;
+  warehouse_name: string;
+  zone_id: string | null;
+  zone_code: string | null;
+  zone_name: string | null;
+  bin_id: string | null;
+  bin_code: string | null;
+  is_active: boolean;
+};
 
 @Component({
   selector: 'app-inventory-page',
@@ -58,57 +76,103 @@ type CameraState = 'idle' | 'starting' | 'active' | 'unsupported' | 'denied' | '
       <div class="inline-status" *ngIf="cameraState === 'cancelled'">Camera scanning was cancelled.</div>
     </section>
 
+    <section class="panel" *ngIf="ambiguousMatches.length">
+      <div class="section-title">
+        <div>
+          <h3>Choose matching lot</h3>
+          <p class="supporting">Multiple visible lot positions matched this code. Select the correct position before acting.</p>
+        </div>
+        <span class="pill">{{ ambiguousMatches.length }} matches</span>
+      </div>
+      <div class="tab-strip">
+        <button
+          class="tab"
+          type="button"
+          *ngFor="let match of ambiguousMatches"
+          (click)="selectAmbiguousMatch(match)"
+        >
+          {{ match.lot_code }} · {{ match.bin_code }} · {{ match.warehouse_name }}
+        </button>
+      </div>
+    </section>
+
     <section class="two-column" *ngIf="scannedItem">
       <article class="panel item-highlight">
-        <p class="eyebrow">Matched lot</p>
+        <p class="eyebrow">{{ selectedMatch ? 'Matched lot position' : 'Matched item' }}</p>
         <h3>{{ scannedItem.item_name }}</h3>
-        <p>Lot {{ scannedItem.lot_code }} · Bin {{ scannedItem.bin_code }} · {{ scannedItem.quantity_on_hand }} on hand</p>
+        <p *ngIf="selectedMatch; else unmatchedSummary">
+          Lot {{ selectedMatch.lot_code }} · Bin {{ selectedMatch.bin_code }} · {{ selectedMatch.quantity_on_hand }} on hand
+        </p>
+        <ng-template #unmatchedSummary>
+          <p *ngIf="scanKind === 'multiple_positions'; else itemOnlySummary">Multiple visible lots matched this code. Select the correct position before acting.</p>
+        </ng-template>
+        <ng-template #itemOnlySummary>
+          <p>No visible lot is currently on hand. Choose a warehouse and bin to receive the first lot.</p>
+        </ng-template>
 
         <label class="field-label">Quantity</label>
         <input class="form-input" type="number" min="1" [(ngModel)]="quantity" />
 
-        <div class="button-row inventory-action-row">
-          <button class="primary-button" type="button" [disabled]="actionBusy || lookupBusy" (click)="pick()">
+        <div class="button-row inventory-action-row" *ngIf="selectedMatch">
+          <button class="primary-button" type="button" [disabled]="actionBusy || lookupBusy || !canPick()" (click)="pick()">
             {{ actionBusy ? 'Working...' : 'Pick' }}
           </button>
           <select class="form-input inventory-select" [disabled]="actionBusy || lookupBusy" [(ngModel)]="targetBinId">
             <option value="">Select target bin</option>
-            <option *ngFor="let bin of targetBins" [value]="bin.bin_id">{{ bin.zone_code }} / {{ bin.bin_code }}</option>
+            <option *ngFor="let bin of moveTargetBins" [value]="bin.bin_id">{{ bin.zone_code }} / {{ bin.bin_code }}</option>
           </select>
-          <button class="secondary-button" type="button" [disabled]="actionBusy || lookupBusy" (click)="move()">
+          <button class="secondary-button" type="button" [disabled]="actionBusy || lookupBusy || !canMove()" (click)="move()">
             {{ actionBusy ? 'Working...' : 'Move' }}
           </button>
         </div>
 
-        <div class="inline-status success" *ngIf="targetBins.length">Loaded {{ targetBins.length }} target bins from warehouse {{ scannedItem.warehouse_name }}.</div>
+        <div class="inline-status success" *ngIf="selectedWarehouseName() && availableBins.length">
+          Loaded {{ availableBins.length }} active bins from warehouse {{ selectedWarehouseName() }}.
+        </div>
+        <div class="inline-status" *ngIf="selectedWarehouseId && !availableBins.length">
+          No active bins are currently available in the selected warehouse.
+        </div>
+        <div class="inline-status" *ngIf="!canPick() || !canMove() || !canReceive()">Visible actions follow your inventory permissions.</div>
 
-        <div class="section-title catalog-section-gap">
-          <h3>Receive stock</h3>
-          <span class="pill">Receiving</span>
-        </div>
-        <div class="filter-strip">
-          <input class="form-input" [disabled]="actionBusy || lookupBusy" [(ngModel)]="receiveLotCode" placeholder="New or existing lot code" />
-          <input class="form-input" [disabled]="actionBusy || lookupBusy" type="date" [(ngModel)]="receiveExpirationDate" />
-          <select class="form-input inventory-select" [disabled]="actionBusy || lookupBusy" [(ngModel)]="receiveBinId">
-            <option value="">Select receive bin</option>
-            <option *ngFor="let bin of targetBinsWithCurrent" [value]="bin.bin_id">{{ bin.zone_code }} / {{ bin.bin_code }}</option>
-          </select>
-          <button class="secondary-button" type="button" [disabled]="actionBusy || lookupBusy" (click)="receive()">
-            {{ actionBusy ? 'Working...' : 'Receive' }}
-          </button>
-        </div>
+        <ng-container *ngIf="scanKind !== 'multiple_positions' || selectedMatch">
+          <div class="section-title catalog-section-gap">
+            <h3>Receive stock</h3>
+            <span class="pill">{{ selectedMatch ? 'Receiving' : 'First receipt' }}</span>
+          </div>
+          <div class="filter-strip">
+            <select
+              *ngIf="!selectedMatch"
+              class="form-input inventory-select"
+              [disabled]="actionBusy || lookupBusy"
+              [(ngModel)]="selectedWarehouseId"
+              (ngModelChange)="onWarehouseChange($event)"
+            >
+              <option value="">Select warehouse</option>
+              <option *ngFor="let warehouse of receivingWarehouses" [value]="warehouse.warehouse_id">{{ warehouse.warehouse_name }}</option>
+            </select>
+            <input class="form-input" [disabled]="actionBusy || lookupBusy" [(ngModel)]="receiveLotCode" placeholder="New or existing lot code" />
+            <input class="form-input" [disabled]="actionBusy || lookupBusy" type="date" [(ngModel)]="receiveExpirationDate" />
+            <select class="form-input inventory-select" [disabled]="actionBusy || lookupBusy" [(ngModel)]="receiveBinId">
+              <option value="">Select receive bin</option>
+              <option *ngFor="let bin of receiveBinOptions" [value]="bin.bin_id">{{ bin.zone_code }} / {{ bin.bin_code }}</option>
+            </select>
+            <button class="secondary-button" type="button" [disabled]="actionBusy || lookupBusy || !canReceive()" (click)="receive()">
+              {{ actionBusy ? 'Working...' : 'Receive' }}
+            </button>
+          </div>
+        </ng-container>
       </article>
 
       <article class="panel">
         <div class="section-title">
-          <h3>Current position</h3>
-          <span class="pill">{{ scannedItem.warehouse_name }}</span>
+          <h3>{{ selectedMatch ? 'Current position' : 'Item details' }}</h3>
+          <span class="pill">{{ selectedWarehouseName() || (scanKind === 'multiple_positions' ? 'Awaiting selection' : 'No lot on hand') }}</span>
         </div>
         <div class="detail-grid">
           <div><span>Barcode</span><strong>{{ scannedItem.barcode || scannedItem.sku }}</strong></div>
           <div><span>Temperature</span><strong>{{ scannedItem.temperature_band }}</strong></div>
-          <div><span>Current bin</span><strong>{{ scannedItem.bin_code }}</strong></div>
-          <div><span>Warehouse</span><strong>{{ scannedItem.warehouse_id }}</strong></div>
+          <div><span>Current bin</span><strong>{{ selectedMatch?.bin_code || 'Not yet assigned' }}</strong></div>
+          <div><span>Warehouse</span><strong>{{ selectedMatch?.warehouse_id || selectedWarehouseId || 'Choose target warehouse' }}</strong></div>
         </div>
       </article>
     </section>
@@ -116,25 +180,34 @@ type CameraState = 'idle' | 'starting' | 'active' | 'unsupported' | 'denied' | '
 })
 export class InventoryPageComponent implements AfterViewInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly session = inject(SessionStore);
   @ViewChild('cameraVideo') cameraVideo?: ElementRef<HTMLVideoElement>;
   private mediaStream: MediaStream | null = null;
   private detector: { detect(source: HTMLVideoElement): Promise<Array<{ rawValue?: string }>> } | null = null;
   private cameraLoopHandle: number | null = null;
 
   scanCode = '';
-  scannedItem: any = null;
-  targetBins: any[] = [];
+  scannedItem: InventoryScanItem | null = null;
+  selectedMatch: InventoryScanLotMatch | null = null;
+  ambiguousMatches: InventoryScanLotMatch[] = [];
+  receivingWarehouses: InventoryScanWarehouseOption[] = [];
+  availableBins: WarehouseTreeBin[] = [];
+  selectedWarehouseId = '';
   targetBinId = '';
+  receiveBinId = '';
   quantity = 1;
+  scanKind: InventoryScanResult['kind'] | null = null;
   message = '';
   errorMessage = '';
   lookupBusy = false;
   actionBusy = false;
   receiveLotCode = '';
   receiveExpirationDate = '';
-  receiveBinId = '';
   cameraState: CameraState = 'idle';
   cameraHint = '';
+  readonly canPick = computed(() => this.session.user()?.permissionCodes.includes('inventory.pick') ?? false);
+  readonly canMove = computed(() => this.session.user()?.permissionCodes.includes('inventory.move') ?? false);
+  readonly canReceive = computed(() => this.session.user()?.permissionCodes.includes('inventory.receive') ?? false);
 
   ngAfterViewInit() {
     if (this.cameraState === 'active' || this.cameraState === 'starting') {
@@ -146,17 +219,16 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
     this.stopCamera('idle');
   }
 
-  get targetBinsWithCurrent() {
-    if (!this.scannedItem?.bin_id) {
-      return this.targetBins;
+  get moveTargetBins() {
+    if (!this.selectedMatch) {
+      return [];
     }
 
-    const current = {
-      bin_id: this.scannedItem.bin_id,
-      zone_code: 'CURRENT',
-      bin_code: this.scannedItem.bin_code
-    };
-    return [current, ...this.targetBins];
+    return this.availableBins.filter((row) => row.bin_id && row.bin_id !== this.selectedMatch!.bin_id);
+  }
+
+  get receiveBinOptions() {
+    return this.availableBins.filter((row) => row.bin_id);
   }
 
   async scan() {
@@ -172,17 +244,12 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
       this.lookupBusy = true;
       this.message = '';
       this.errorMessage = '';
-      this.scannedItem = await this.api.inventoryScan(code);
-      const tree = await this.api.warehouseTree(this.scannedItem.warehouse_id);
-      this.targetBins = tree.filter((row) => row.bin_id && row.bin_id !== this.scannedItem.bin_id);
-      this.targetBinId = '';
-      this.receiveBinId = this.scannedItem.bin_id;
-      this.receiveLotCode = this.scannedItem.lot_code ? `${this.scannedItem.lot_code}-R` : '';
-      this.receiveExpirationDate = '';
-      this.message = `Matched ${this.scannedItem.item_name} in ${this.scannedItem.warehouse_name}.`;
+      this.resetLookupState();
+
+      const result = await this.api.inventoryScan(code);
+      await this.applyScanResult(result);
     } catch (error) {
-      this.scannedItem = null;
-      this.targetBins = [];
+      this.resetLookupState();
       this.errorMessage = this.toMessage(error);
       this.message = '';
     } finally {
@@ -190,8 +257,46 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  async selectAmbiguousMatch(match: InventoryScanLotMatch) {
+    if (this.lookupBusy || this.actionBusy) {
+      return;
+    }
+
+    try {
+      this.lookupBusy = true;
+      this.errorMessage = '';
+      await this.selectMatch(match);
+      this.message = `Selected ${match.lot_code} in ${match.warehouse_name}.`;
+    } catch (error) {
+      this.errorMessage = this.toMessage(error);
+    } finally {
+      this.lookupBusy = false;
+    }
+  }
+
+  async onWarehouseChange(warehouseId: string) {
+    this.selectedWarehouseId = warehouseId;
+    this.receiveBinId = '';
+    this.availableBins = [];
+
+    if (!warehouseId) {
+      return;
+    }
+
+    try {
+      this.lookupBusy = true;
+      this.errorMessage = '';
+      await this.loadWarehouseBins(warehouseId);
+      this.receiveBinId = this.receiveBinOptions[0]?.bin_id ?? '';
+    } catch (error) {
+      this.errorMessage = this.toMessage(error);
+    } finally {
+      this.lookupBusy = false;
+    }
+  }
+
   async pick() {
-    if (!this.scannedItem || this.actionBusy) {
+    if (!this.selectedMatch || this.actionBusy || !this.canPick()) {
       return;
     }
 
@@ -199,8 +304,8 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
       this.actionBusy = true;
       this.errorMessage = '';
       await this.api.pickInventory({
-        lotId: this.scannedItem.lot_id,
-        binId: this.scannedItem.bin_id,
+        lotId: this.selectedMatch.lot_id,
+        binId: this.selectedMatch.bin_id,
         quantity: Number(this.quantity)
       });
       await this.scan();
@@ -213,7 +318,11 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
   }
 
   async move() {
-    if (!this.scannedItem || !this.targetBinId) {
+    if (!this.canMove()) {
+      this.errorMessage = 'Move permission is required for this action.';
+      return;
+    }
+    if (!this.selectedMatch || !this.targetBinId) {
       this.errorMessage = 'Select a target bin before moving inventory.';
       return;
     }
@@ -225,8 +334,8 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
       this.actionBusy = true;
       this.errorMessage = '';
       await this.api.moveInventory({
-        lotId: this.scannedItem.lot_id,
-        sourceBinId: this.scannedItem.bin_id,
+        lotId: this.selectedMatch.lot_id,
+        sourceBinId: this.selectedMatch.bin_id,
         targetBinId: this.targetBinId,
         quantity: Number(this.quantity)
       });
@@ -240,8 +349,12 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
   }
 
   async receive() {
-    if (!this.scannedItem || !this.receiveBinId || !this.receiveLotCode.trim()) {
-      this.errorMessage = 'Select a receive bin and provide a lot code before receiving stock.';
+    if (!this.canReceive()) {
+      this.errorMessage = 'Receive permission is required for this action.';
+      return;
+    }
+    if (!this.scannedItem || !this.selectedWarehouseId || !this.receiveBinId || !this.receiveLotCode.trim()) {
+      this.errorMessage = 'Select a warehouse, choose a receive bin, and provide a lot code before receiving stock.';
       return;
     }
     if (this.actionBusy) {
@@ -253,13 +366,13 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
       this.errorMessage = '';
       await this.api.receiveInventory({
         itemId: this.scannedItem.item_id,
-        warehouseId: this.scannedItem.warehouse_id,
+        warehouseId: this.selectedWarehouseId,
         binId: this.receiveBinId,
         lotCode: this.receiveLotCode.trim(),
         quantity: Number(this.quantity),
         expirationDate: this.receiveExpirationDate || undefined
       });
-      this.scanCode = this.scannedItem.sku || this.scannedItem.barcode;
+      this.scanCode = this.scannedItem.barcode || this.scannedItem.sku;
       await this.scan();
       this.message = 'Receive completed.';
     } catch (error) {
@@ -276,6 +389,93 @@ export class InventoryPageComponent implements AfterViewInit, OnDestroy {
     }
 
     await this.startCamera();
+  }
+
+  selectedWarehouseName() {
+    if (this.selectedMatch) {
+      return this.selectedMatch.warehouse_name;
+    }
+
+    return this.receivingWarehouses.find((warehouse) => warehouse.warehouse_id === this.selectedWarehouseId)?.warehouse_name ?? '';
+  }
+
+  private async applyScanResult(result: InventoryScanResult) {
+    if (result.kind === 'no_match') {
+      this.scanKind = 'no_match';
+      this.errorMessage = result.message;
+      return;
+    }
+
+    if (result.kind === 'item_only') {
+      this.scanKind = 'item_only';
+      this.scannedItem = result.item;
+      this.receivingWarehouses = result.receiving_warehouses;
+      this.selectedWarehouseId = result.receiving_warehouses[0]?.warehouse_id ?? '';
+      if (this.selectedWarehouseId) {
+        await this.loadWarehouseBins(this.selectedWarehouseId);
+        this.receiveBinId = this.receiveBinOptions[0]?.bin_id ?? '';
+      }
+      this.receiveLotCode = '';
+      this.message = `Matched ${result.item.item_name}. Choose a warehouse and bin to receive the first lot.`;
+      return;
+    }
+
+    if (result.kind === 'single_position') {
+      this.scanKind = 'single_position';
+      await this.selectMatch(result.match);
+      this.message = `Matched ${result.match.item_name} in ${result.match.warehouse_name}.`;
+      return;
+    }
+
+    this.scanKind = 'multiple_positions';
+    this.scannedItem = this.toScanItem(result.matches[0]);
+    this.ambiguousMatches = result.matches;
+    this.message = `Found ${result.matches.length} visible lot matches for ${result.code}. Select the correct lot before continuing.`;
+  }
+
+  private async selectMatch(match: InventoryScanLotMatch) {
+    this.scannedItem = this.toScanItem(match);
+    this.selectedMatch = match;
+    this.selectedWarehouseId = match.warehouse_id;
+    this.receiveLotCode = `${match.lot_code}-R`;
+    this.receiveExpirationDate = '';
+    await this.loadWarehouseBins(match.warehouse_id);
+    this.targetBinId = '';
+    this.receiveBinId = match.bin_id;
+  }
+
+  private async loadWarehouseBins(warehouseId: string) {
+    const tree = await this.api.warehouseTree(warehouseId);
+    this.availableBins = (tree as WarehouseTreeBin[]).filter((row) => row.bin_id && row.is_active !== false);
+  }
+
+  private resetLookupState() {
+    this.scannedItem = null;
+    this.selectedMatch = null;
+    this.ambiguousMatches = [];
+    this.receivingWarehouses = [];
+    this.availableBins = [];
+    this.scanKind = null;
+    this.selectedWarehouseId = '';
+    this.targetBinId = '';
+    this.receiveBinId = '';
+    this.receiveLotCode = '';
+    this.receiveExpirationDate = '';
+    this.quantity = 1;
+  }
+
+  private toScanItem(match: InventoryScanLotMatch): InventoryScanItem {
+    return {
+      item_id: match.item_id,
+      item_name: match.item_name,
+      sku: match.sku,
+      barcode: match.barcode,
+      temperature_band: match.temperature_band,
+      weight_lbs: match.weight_lbs,
+      length_in: match.length_in,
+      width_in: match.width_in,
+      height_in: match.height_in
+    };
   }
 
   private async startCamera() {

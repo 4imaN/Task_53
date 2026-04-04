@@ -10,9 +10,9 @@
     "migrate": "node scripts/run-with-local-env.mjs src/db/migrate.ts",
     "bootstrap:admin": "node scripts/run-with-local-env.mjs src/db/bootstrap-admin.ts",
     "jobs:run-once": "node scripts/run-with-local-env.mjs src/scripts/run-nightly-jobs.ts",
-    "test": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test --exclude \"test/api-*.integration.test.ts\"",
-    "test:security": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test/auth-security.test.ts test/password-history.test.ts",
-    "test:integration": "JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 npm run migrate && JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 SEED_DEMO_USERS=1 npm run bootstrap:admin && JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 RUN_DB_TESTS=1 vitest run test/api-*.integration.test.ts"
+    "test": "APP_ENV=test JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test --exclude \"test/api-*.integration.test.ts\"",
+    "test:security": "APP_ENV=test JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 vitest run test/auth-security.test.ts test/password-history.test.ts",
+    "test:integration": "APP_ENV=test JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 npm run migrate && APP_ENV=test JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 SEED_DEMO_USERS=1 npm run bootstrap:admin && APP_ENV=test JWT_SECRET=test-jwt-secret ENCRYPTION_KEY=test-encryption-key DEFAULT_ADMIN_PASSWORD=ChangeMeNow!123 RUN_DB_TESTS=1 vitest run test/api-*.integration.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^10.0.1",
