@@ -1,5 +1,7 @@
 # OmniStock
 
+**Project type: fullstack**
+
 Offline warehouse and catalog management system for district-scale operations running on a closed local network.
 
 ## Included in this repo
@@ -34,21 +36,34 @@ Offline warehouse and catalog management system for district-scale operations ru
 ## Quick start
 
 1. Start the stack:
-   `docker compose up --build`
+   `docker-compose up`
+   Or with a fresh build:
+   `docker-compose up --build`
 2. Open the frontend:
    `http://localhost`
 3. Authenticated API health check:
    first obtain a token from `/api/auth/login`, then call `GET /api/health` with `Authorization: Bearer <token>`
 
-`docker compose up` is self-contained: it creates runtime secrets automatically through `omnistock-secrets-init` and stores them in the named volume `runtime-secrets`.
+`docker-compose up` is self-contained: it creates runtime secrets automatically through `omnistock-secrets-init` and stores them in the named volume `runtime-secrets`.
 No checked-in static fallback secrets are used.
 If you are switching from an older local setup and see database authentication errors, reset local state once with:
-`docker compose down -v --remove-orphans`
+`docker-compose down -v --remove-orphans`
 
-Optional local helper for non-Docker commands:
-- `node scripts/bootstrap-local-dev.mjs`
-- writes `./.env` and `apps/api/.env.local`
-- useful when running API scripts directly on the host instead of inside compose
+## Demo credentials
+
+Demo users are seeded when `SEED_DEMO_USERS=1` is set in the environment before bootstrap. The Docker Compose stack enables this by default via the `.env` file or by exporting `SEED_DEMO_USERS=1` before running `docker-compose up`.
+
+| Role             | Username          | Password            | Login URL                                |
+|------------------|-------------------|---------------------|------------------------------------------|
+| Administrator    | admin             | ChangeMeNow!123     | `http://localhost/login/administrator`   |
+| Manager          | manager.demo      | ManagerDemo!123     | `http://localhost/login/manager`         |
+| Moderator        | moderator.demo    | ModeratorDemo!123   | `http://localhost/login/moderator`       |
+| Catalog Editor   | catalog.demo      | CatalogDemo!123     | `http://localhost/login/catalog-editor`  |
+| Warehouse Clerk  | clerk.demo        | ClerkDemo!123       | `http://localhost/login/warehouse-clerk` |
+
+The administrator account is always created during bootstrap. The four demo role accounts require `SEED_DEMO_USERS=1`.
+
+Bootstrap provisioning enforces the shared password policy. Weak `DEFAULT_ADMIN_PASSWORD` values, or weak seeded demo passwords when `SEED_DEMO_USERS=1`, fail the bootstrap command before any users are written.
 
 For production or on-prem deployment:
 - provide organization-managed secrets explicitly
@@ -57,66 +72,13 @@ For production or on-prem deployment:
 - do not reuse the helper-generated local `.env` as a deployment secret source
 - replace the local compose-generated runtime secrets with managed secret injection
 
-## Frontend development without Docker
+## Browser verification
 
-This path is for local frontend development and verification. It does not require Docker.
-
-1. Install frontend dependencies:
-   `cd apps/web && npm install`
-2. Start the Angular dev server:
-   `npm start`
-3. Build the frontend locally:
-   `npm run build`
-4. Run the full frontend test suite:
-   `npm test`
-5. Preview the built frontend bundle:
-   `npm run preview`
-
-Local frontend server:
-- `http://127.0.0.1:4200`
-
-Local built preview server:
-- `http://127.0.0.1:4173`
-
-What works frontend-only:
-- local build
-- unit tests
-- Playwright browser verification with mocked API responses
-- responsive/layout verification
-- auth/guard/route handling verification
-- login precheck/CAPTCHA failure handling verification
-
-If `npm test` is blocked by a restrictive local shell or sandbox policy while starting the preview server, run the two underlying commands directly:
-- `npm run test:ui`
-- `npm run test:unit`
-
-What requires the local API:
-- real login against Fastify/PostgreSQL
-- live inventory, search, warehouse, admin, moderation, and bulk-processing data flows
-
-Before running non-Docker API commands:
-
-1. Generate local env files:
-   `node scripts/bootstrap-local-dev.mjs`
-2. If your local PostgreSQL role/database is not the default localhost fallback, edit `apps/api/.env.local` and set `DATABASE_URL`.
-
-If you want live API-backed frontend verification without Docker:
-- API:
-  `cd apps/api && npm install && npm run migrate && npm run bootstrap:admin && npm run dev`
-- Frontend:
-  `cd apps/web && npm start`
-
-The Angular dev server proxies `/api` to the Fastify API through `proxy.conf.json`.
-
-## Browser verification modes
-
-Two frontend browser verification modes are supported and both should exist:
-
-### 1. Mocked browser verification
+### Mocked browser verification
 
 Fast, deterministic coverage that does not require the backend:
 
-- `cd apps/web && npm run test:ui`
+- `docker-compose exec omnistock-web npm run test:ui`
 
 What it verifies:
 
@@ -132,59 +94,15 @@ What it verifies:
 
 This suite uses Playwright route interception on purpose. It is for broad UI behavior coverage, not backend proof.
 
-### 2. Real local non-Docker browser smoke
+### Docker-backed live smoke
 
-Small real integration proof against the actual local frontend and API without Docker:
+Browser smoke against the Docker-served stack:
 
-1. Generate local env files:
-   `node scripts/bootstrap-local-dev.mjs`
-2. Start PostgreSQL locally and make it reachable to the API. If needed, set `DATABASE_URL` in `apps/api/.env.local`.
-3. Start the API locally:
-   `cd apps/api && npm install && npm run migrate && npm run bootstrap:admin && npm run dev`
-4. Start the frontend locally:
-   `cd apps/web && npm install && npm start`
-5. Run the local real smoke:
-   `cd apps/web && OMNISTOCK_E2E_USERNAME='<username>' OMNISTOCK_E2E_PASSWORD='<password>' npm run test:ui:local`
-
-What it verifies:
-
-- real login against the local Fastify API
-- cookie-based session establishment through the actual frontend
-- protected-route access after login
-- one real data-backed search page load
-- one real inventory receive flow
-- one real document transition and execution flow
-- one real moderation status update and reporter inbox notification flow
-
-This command does not use Playwright API mocks and does not require Docker. It assumes the local frontend and API are already running.
-It fails fast with actionable messages when:
-
-- the Angular dev server is not reachable
-- the API is not reachable through the frontend proxy
-- the actor route is invalid or unavailable
-- the required smoke credentials are missing
+- `docker-compose exec omnistock-web sh -c "OMNISTOCK_E2E_USERNAME=admin OMNISTOCK_E2E_PASSWORD='ChangeMeNow!123' npm run test:ui:live"`
 
 The full live smoke defaults to the administrator actor because it is the smallest single role that can exercise search, inventory, document, moderation, and inbox flows end-to-end. Override `OMNISTOCK_E2E_ACTOR` only when you intentionally want narrower role-specific smoke coverage.
 
-### Docker-backed live smoke
-
-If you want the browser smoke against the Docker-served stack instead:
-
-- `cd apps/web && OMNISTOCK_E2E_USERNAME=admin OMNISTOCK_E2E_PASSWORD='<your password>' npm run test:ui:live`
-
-## Default admin bootstrap
-
-The API bootstrap creates or updates the default administrator from environment values:
-
-- username: `DEFAULT_ADMIN_USERNAME`
-- password: `DEFAULT_ADMIN_PASSWORD`
-
-Demo users are not seeded unless explicitly enabled.
-
-Bootstrap provisioning now enforces the same shared password policy used by runtime account creation and password changes. Weak `DEFAULT_ADMIN_PASSWORD` values, or weak seeded demo passwords when `SEED_DEMO_USERS=1`, fail the bootstrap command before any users are written.
-
-- default: admin only
-- enable demo users: set `SEED_DEMO_USERS=1` before running `npm run bootstrap:admin`
+## Demo user scopes
 
 The seeded demo scopes are intentional:
 - `moderator.demo` and `catalog.demo` receive department-backed scope so their search and moderation workspaces are usable
@@ -290,7 +208,7 @@ Nightly jobs do all of the following:
 With the stack running:
 
 - Run the job once manually:
-  `docker compose exec omnistock-api npm run jobs:run-once`
+  `docker-compose exec omnistock-api npm run jobs:run-once`
 - Inspect metrics:
   `http://localhost/api/metrics/summary`
 - Inspect archived documents and batch jobs from PostgreSQL or through the admin/audit surfaces
@@ -319,7 +237,7 @@ This key is loaded by the API config and also injected into the migration runner
 With PostgreSQL running and the schema applied:
 
 - Run the API integration suite:
-  `cd apps/api && RUN_DB_TESTS=1 npm run test:integration`
+  `docker-compose exec omnistock-api sh -c 'RUN_DB_TESTS=1 npm run test:integration'`
 
 The encryption coverage proves all of the following:
 
@@ -335,59 +253,42 @@ The encryption coverage proves all of the following:
 
 ## Test Commands
 
-- Frontend unit + browser suite:
-  `cd apps/web && npm test`
-- Frontend unit tests only:
-  `cd apps/web && npm run test:unit`
-- Frontend Playwright browser suite only:
-  `cd apps/web && npm run test:ui`
-- Frontend Playwright local real smoke against a locally running frontend + API:
-  `cd apps/web && OMNISTOCK_E2E_USERNAME='<username>' OMNISTOCK_E2E_PASSWORD='<password>' npm run test:ui:local`
-- Frontend live stack smoke against the running Docker deployment:
-  `cd apps/web && OMNISTOCK_E2E_USERNAME=admin OMNISTOCK_E2E_PASSWORD='<your password>' npm run test:ui:live`
-- Frontend local preview:
-  `cd apps/web && npm run preview`
-- API unit suite:
-  `cd apps/api && npm test`
-- API security-focused unit suite:
-  `cd apps/api && npm run test:security`
-- API DB-backed integration suite:
-  `cd apps/api && RUN_DB_TESTS=1 npm run test:integration`
+All tests run inside Docker or against the Docker-served stack.
+
 - Docker end-to-end API test run:
   `./run_tests.sh`
+- Frontend unit + browser suite (inside container):
+  `docker-compose exec omnistock-web npm test`
+- Frontend unit tests only:
+  `docker-compose exec omnistock-web npm run test:unit`
+- Frontend Playwright browser suite only:
+  `docker-compose exec omnistock-web npm run test:ui`
+- Frontend live stack smoke against the running Docker deployment:
+  `docker-compose exec omnistock-web sh -c "OMNISTOCK_E2E_USERNAME=admin OMNISTOCK_E2E_PASSWORD='ChangeMeNow!123' npm run test:ui:live"`
+- API unit suite (inside container):
+  `docker-compose exec omnistock-api npm test`
+- API security-focused unit suite:
+  `docker-compose exec omnistock-api npm run test:security`
+- API DB-backed integration suite:
+  `docker-compose exec omnistock-api sh -c 'RUN_DB_TESTS=1 npm run test:integration'`
 
-`cd apps/api && npm test` is intentionally non-DB and deterministic. It now includes security-critical tests for CAPTCHA lockout progression and password-history reuse enforcement.
+`npm test` in the API container is intentionally non-DB and deterministic. It includes security-critical tests for CAPTCHA lockout progression and password-history reuse enforcement.
 
-The API integration suite is DB-backed, gated behind `RUN_DB_TESTS=1`, and requires a reachable PostgreSQL database.
+The API integration suite is DB-backed, gated behind `RUN_DB_TESTS=1`, and requires a reachable PostgreSQL database (provided by the Docker Compose stack).
 
-`npm run test:integration` now performs:
+`npm run test:integration` performs:
 1. migrations
 2. admin + demo bootstrap (`SEED_DEMO_USERS=1`)
 3. integration test execution
 
-Local API integration prep:
-- run:
-  `node scripts/bootstrap-local-dev.mjs`
-- ensure `apps/api/.env.local` contains secure values for:
-  - `JWT_SECRET`
-  - `ENCRYPTION_KEY`
-  - `DEFAULT_ADMIN_PASSWORD`
-- ensure `DATABASE_URL` points to a PostgreSQL role and database that actually exist (or leave it unset to use the localhost fallback)
-- then run:
-  `cd apps/api && RUN_DB_TESTS=1 npm run test:integration`
-
-If your machine does not have a local PostgreSQL role/database matching the default `DATABASE_URL`, export a working local `DATABASE_URL` first.
-
 ## Verification notes
 
 - `./run_tests.sh` verifies the Docker-backed API build plus unit/integration coverage.
-- `cd apps/web && npm test` builds the Angular app and runs the real Playwright browser verification suite.
-- `cd apps/web && npm run test:unit` runs local unit tests for frontend auth/search/camera helpers.
-- Playwright starts a local built-preview server automatically and runs against `http://127.0.0.1:4173` unless `PLAYWRIGHT_BASE_URL` is overridden.
+- `docker-compose exec omnistock-web npm test` builds the Angular app and runs the Playwright browser verification suite.
+- `docker-compose exec omnistock-web npm run test:unit` runs unit tests for frontend auth/search/camera helpers.
+- Playwright starts a built-preview server automatically and runs against `http://127.0.0.1:4173` unless `PLAYWRIGHT_BASE_URL` is overridden.
 - Frontend browser tests use mocked API routes so they remain runnable without the Fastify server.
-- `npm run test:ui:local` is the real non-Docker frontend/API verification path. It expects the Angular dev server on `http://127.0.0.1:4200`, valid API login credentials in `OMNISTOCK_E2E_USERNAME` / `OMNISTOCK_E2E_PASSWORD`, and an authenticated local API health check through `/api/health`.
 - `npm run test:ui:live` is the non-mock verification path. It checks the real Docker-served frontend shell and logs into the real Fastify API through a Docker-backed smoke script.
-- In this Codex sandbox, `npm test` still hit an environment-level `listen EPERM` when the preview server was started through the top-level npm lifecycle, while `npm run test:ui` and `npm run test:unit` both completed successfully. Treat that as a local shell/sandbox boundary, not as a stubbed test setup.
 
 ## Frontend feature notes
 
