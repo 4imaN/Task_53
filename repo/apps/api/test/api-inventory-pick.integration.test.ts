@@ -13,10 +13,10 @@ describeIfIntegration('inventory pick API integration', () => {
     const positionResult = await server.db.query<{
       lot_id: string;
       bin_id: string;
-      quantity: number;
+      quantity: string;
     }>(
       `
-        SELECT l.id AS lot_id, ip.bin_id, ip.quantity
+        SELECT l.id AS lot_id, ip.bin_id, ip.quantity::text AS quantity
         FROM lots l
         JOIN inventory_positions ip ON ip.lot_id = l.id
         WHERE ip.quantity >= 2
@@ -29,13 +29,15 @@ describeIfIntegration('inventory pick API integration', () => {
       throw new Error('No inventory position with quantity >= 2 found; seed data may be missing');
     }
 
-    const { lot_id: lotId, bin_id: binId, quantity: originalPositionQuantity } = positionResult.rows[0];
+    const lotId = positionResult.rows[0].lot_id;
+    const binId = positionResult.rows[0].bin_id;
+    const originalPositionQuantity = Number(positionResult.rows[0].quantity);
 
-    const originalLotResult = await server.db.query<{ quantity_on_hand: number }>(
-      `SELECT quantity_on_hand FROM lots WHERE id = $1`,
+    const originalLotResult = await server.db.query<{ quantity_on_hand: string }>(
+      `SELECT quantity_on_hand::text AS quantity_on_hand FROM lots WHERE id = $1`,
       [lotId]
     );
-    const originalLotQuantity = originalLotResult.rows[0].quantity_on_hand;
+    const originalLotQuantity = Number(originalLotResult.rows[0].quantity_on_hand);
 
     let transactionCleanedUp = false;
 
@@ -50,17 +52,17 @@ describeIfIntegration('inventory pick API integration', () => {
       expect(pickResponse.statusCode).toBe(200);
       expect(pickResponse.json()).toEqual({ success: true });
 
-      const positionAfter = await server.db.query<{ quantity: number }>(
-        `SELECT quantity FROM inventory_positions WHERE lot_id = $1 AND bin_id = $2`,
+      const positionAfter = await server.db.query<{ quantity: string }>(
+        `SELECT quantity::text AS quantity FROM inventory_positions WHERE lot_id = $1 AND bin_id = $2`,
         [lotId, binId]
       );
-      expect(positionAfter.rows[0].quantity).toBe(originalPositionQuantity - 1);
+      expect(Number(positionAfter.rows[0].quantity)).toBe(originalPositionQuantity - 1);
 
-      const lotAfter = await server.db.query<{ quantity_on_hand: number }>(
-        `SELECT quantity_on_hand FROM lots WHERE id = $1`,
+      const lotAfter = await server.db.query<{ quantity_on_hand: string }>(
+        `SELECT quantity_on_hand::text AS quantity_on_hand FROM lots WHERE id = $1`,
         [lotId]
       );
-      expect(lotAfter.rows[0].quantity_on_hand).toBe(originalLotQuantity - 1);
+      expect(Number(lotAfter.rows[0].quantity_on_hand)).toBe(originalLotQuantity - 1);
     } finally {
       // Restore inventory_positions quantity
       await server.db.query(

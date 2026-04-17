@@ -72,6 +72,11 @@ For production or on-prem deployment:
 - do not reuse the helper-generated local `.env` as a deployment secret source
 - replace the local compose-generated runtime secrets with managed secret injection
 
+## Local bootstrap helper
+
+The repository also includes `scripts/bootstrap-local-dev.mjs` for generating non-static local development secrets and env files when maintainers need them outside the main Docker startup path.
+The supported startup, verification, and test workflow in this README remains the Docker Compose path documented above.
+
 ## Browser verification
 
 ### Mocked browser verification

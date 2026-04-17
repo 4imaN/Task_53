@@ -22,8 +22,8 @@ describeIfIntegration('inbox API integration', () => {
     try {
       const insertResult = await server.db.query<{ id: string }>(
         `
-          INSERT INTO notifications (user_id, title, body, reference_type, reference_id)
-          VALUES ($1, 'Test notification', 'Test body', 'abuse_report', $2)
+          INSERT INTO notifications (user_id, notification_type, title, body, reference_type, reference_id)
+          VALUES ($1, 'abuse_report_status', 'Test notification', 'Test body', 'abuse_report', $2)
           RETURNING id
         `,
         [adminId, referenceId]
@@ -73,8 +73,8 @@ describeIfIntegration('inbox API integration', () => {
     try {
       const insertResult = await server.db.query<{ id: string }>(
         `
-          INSERT INTO notifications (user_id, title, body, reference_type, reference_id)
-          VALUES ($1, 'Read test', 'Read body', 'abuse_report', $2)
+          INSERT INTO notifications (user_id, notification_type, title, body, reference_type, reference_id)
+          VALUES ($1, 'abuse_report_status', 'Read test', 'Read body', 'abuse_report', $2)
           RETURNING id
         `,
         [adminId, referenceId]
@@ -119,8 +119,8 @@ describeIfIntegration('inbox API integration', () => {
     try {
       const insertA = await server.db.query<{ id: string }>(
         `
-          INSERT INTO notifications (user_id, title, body, reference_type, reference_id)
-          VALUES ($1, 'Read all A', 'Body A', 'abuse_report', $2)
+          INSERT INTO notifications (user_id, notification_type, title, body, reference_type, reference_id)
+          VALUES ($1, 'abuse_report_status', 'Read all A', 'Body A', 'abuse_report', $2)
           RETURNING id
         `,
         [adminId, refIdA]
@@ -129,8 +129,8 @@ describeIfIntegration('inbox API integration', () => {
 
       const insertB = await server.db.query<{ id: string }>(
         `
-          INSERT INTO notifications (user_id, title, body, reference_type, reference_id)
-          VALUES ($1, 'Read all B', 'Body B', 'abuse_report', $2)
+          INSERT INTO notifications (user_id, notification_type, title, body, reference_type, reference_id)
+          VALUES ($1, 'abuse_report_status', 'Read all B', 'Body B', 'abuse_report', $2)
           RETURNING id
         `,
         [adminId, refIdB]

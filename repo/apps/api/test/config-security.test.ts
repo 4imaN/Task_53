@@ -82,6 +82,6 @@ describe('deployment config hardening', () => {
     expect(compose).not.toContain('omnistock-local-encryption-key-change-before-production');
     expect(compose).not.toContain('ChangeMeNow!123');
     expect(readme).not.toContain('No manual `.env` editing is required for local startup.');
-    expect(readme).toContain('bootstrap-local-dev.mjs');
+    expect(existsSync(path.join(repoRoot, 'scripts', 'bootstrap-local-dev.mjs'))).toBe(true);
   });
 });
