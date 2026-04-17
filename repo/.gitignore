@@ -6,7 +6,6 @@
 # Environment and secrets (keep .env.example trackable)
 .env
 .env.local
-.tmp
 
 # Dependencies
 node_modules/
@@ -34,5 +33,3 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
-
-
