@@ -376,6 +376,67 @@ describeIfIntegration('catalog API integration', () => {
     expect(answerResponse.body).not.toContain('Internal server error');
   });
 
+  it('submits a review, persists it to the DB, updates the item average_rating, and audit-logs the upsert', async () => {
+    const server = harness.server;
+    const { token } = await loginAsAdmin(server);
+    const itemId = await createFixtureItem(server);
+    let reviewId: string | null = null;
+
+    try {
+      const reviewResponse = await server.inject({
+        method: 'POST',
+        url: `/api/catalog/items/${itemId}/reviews`,
+        headers: {
+          authorization: `Bearer ${token}`
+        },
+        payload: {
+          rating: 5,
+          body: 'Excellent product for warehouse operations'
+        }
+      });
+
+      expect(reviewResponse.statusCode).toBe(201);
+      const reviewBody = reviewResponse.json() as { reviewId: string };
+      expect(reviewBody).toMatchObject({ reviewId: expect.any(String) });
+      reviewId = reviewBody.reviewId;
+
+      const reviewRow = await server.db.query<{ id: string; rating: number; body: string }>(
+        `SELECT id, rating, body FROM reviews WHERE id = $1`,
+        [reviewId]
+      );
+      expect(reviewRow.rowCount).toBe(1);
+      expect(Number(reviewRow.rows[0].rating)).toBe(5);
+      expect(reviewRow.rows[0].body).toBe('Excellent product for warehouse operations');
+
+      const itemRow = await server.db.query<{ average_rating: string; rating_count: string }>(
+        `SELECT average_rating::text, rating_count::text FROM items WHERE id = $1`,
+        [itemId]
+      );
+      expect(itemRow.rowCount).toBe(1);
+      expect(Number(itemRow.rows[0].average_rating)).toBeGreaterThan(0);
+      expect(Number(itemRow.rows[0].rating_count)).toBeGreaterThanOrEqual(1);
+
+      const auditRow = await server.db.query<{ action_type: string }>(
+        `
+          SELECT action_type
+          FROM audit_log
+          WHERE action_type = 'review_upsert'
+            AND resource_id = $1
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `,
+        [itemId]
+      );
+      expect(auditRow.rowCount).toBe(1);
+      expect(auditRow.rows[0].action_type).toBe('review_upsert');
+    } finally {
+      if (reviewId) {
+        await server.db.query(`DELETE FROM reviews WHERE id = $1`, [reviewId]);
+      }
+      await server.db.query(`DELETE FROM items WHERE id = $1`, [itemId]);
+    }
+  });
+
   it('applies the same department scoping to detail favorites and history as the dedicated endpoints', async () => {
     const server = harness.server;
     const userResult = await server.db.query<{ id: string }>(

@@ -1,473 +1,426 @@
 # Test Coverage Audit
 
-Project type declaration in `README.md` top section: missing.  
-Inferred project type: `fullstack` from `README.md:1-24`, `docker-compose.yml`, `backend/`, and `frontend/`.
+## Project Type
+- Declared type: `fullstack` in `README.md:3`.
+- Repository evidence also supports `fullstack`: backend in `apps/api`, frontend in `apps/web`, Angular route tree in `apps/web/src/app/app.routes.ts:25-70`.
 
 ## Backend Endpoint Inventory
 
-| Endpoint | Route evidence |
-| --- | --- |
-| `GET /api/health` | `backend/src/index.js:81` |
-| `POST /api/auth/login` | `backend/src/routes/auth.js:31` |
-| `POST /api/auth/logout` | `backend/src/routes/auth.js:93` |
-| `POST /api/auth/verify-device` | `backend/src/routes/auth.js:101` |
-| `GET /api/auth/me` | `backend/src/routes/auth.js:155` |
-| `POST /api/auth/recovery-codes` | `backend/src/routes/auth.js:176` |
-| `GET /api/users` | `backend/src/routes/users.js:21` |
-| `POST /api/users` | `backend/src/routes/users.js:133` |
-| `PATCH /api/users/:id` | `backend/src/routes/users.js:208` |
-| `GET /api/users/:id/sessions` | `backend/src/routes/users.js:288` |
-| `DELETE /api/users/:id/sessions/:sessionId` | `backend/src/routes/users.js:324` |
-| `POST /api/users/:id/unlock` | `backend/src/routes/users.js:361` |
-| `POST /api/users/:id/session-exception` | `backend/src/routes/users.js:414` |
-| `POST /api/users/:id/reset-password` | `backend/src/routes/users.js:470` |
-| `GET /api/users/:id/stations` | `backend/src/routes/users.js:523` |
-| `PUT /api/users/:id/stations` | `backend/src/routes/users.js:536` |
-| `POST /api/users/:id/generate-codes` | `backend/src/routes/users.js:582` |
-| `GET /api/stations` | `backend/src/routes/stations.js:15` |
-| `GET /api/stations/:id` | `backend/src/routes/stations.js:119` |
-| `POST /api/stations` | `backend/src/routes/stations.js:158` |
-| `PATCH /api/stations/:id` | `backend/src/routes/stations.js:214` |
-| `GET /api/trainsets` | `backend/src/routes/trainsets.js:13` |
-| `POST /api/trainsets` | `backend/src/routes/trainsets.js:32` |
-| `PATCH /api/trainsets/:id` | `backend/src/routes/trainsets.js:77` |
-| `GET /api/trips/search` | `backend/src/routes/trips.js:14` |
-| `GET /api/trips/hot-searches` | `backend/src/routes/trips.js:217` |
-| `GET /api/schedules` | `backend/src/routes/schedules.js:39` |
-| `POST /api/schedules` | `backend/src/routes/schedules.js:92` |
-| `PATCH /api/schedules/:id` | `backend/src/routes/schedules.js:247` |
-| `GET /api/schedules/:id` | `backend/src/routes/schedules.js:336` |
-| `GET /api/schedules/:id/versions` | `backend/src/routes/schedules.js:418` |
-| `GET /api/schedules/:id/versions/:versionId` | `backend/src/routes/schedules.js:452` |
-| `POST /api/schedules/:id/versions` | `backend/src/routes/schedules.js:511` |
-| `PATCH /api/schedules/:id/versions/:versionId` | `backend/src/routes/schedules.js:669` |
-| `POST /api/schedules/:id/versions/:versionId/stops` | `backend/src/routes/schedules.js:719` |
-| `PATCH /api/schedules/:id/versions/:versionId/stops/:stopId` | `backend/src/routes/schedules.js:776` |
-| `DELETE /api/schedules/:id/versions/:versionId/stops/:stopId` | `backend/src/routes/schedules.js:823` |
-| `POST /api/schedules/:id/versions/:versionId/seat-classes` | `backend/src/routes/schedules.js:858` |
-| `PATCH /api/schedules/:id/versions/:versionId/seat-classes/:classId` | `backend/src/routes/schedules.js:923` |
-| `DELETE /api/schedules/:id/versions/:versionId/seat-classes/:classId` | `backend/src/routes/schedules.js:986` |
-| `POST /api/schedules/:id/versions/:versionId/validate` | `backend/src/routes/schedules.js:1015` |
-| `POST /api/schedules/:id/versions/:versionId/publish` | `backend/src/routes/schedules.js:1062` |
-| `POST /api/schedules/:id/versions/:versionId/request-approval` | `backend/src/routes/schedules.js:1146` |
-| `GET /api/schedules/:id/versions/compare` | `backend/src/routes/schedules.js:1235` |
-| `POST /api/schedules/:id/rollback` | `backend/src/routes/schedules.js:1279` |
-| `GET /api/approvals` | `backend/src/routes/approvals.js:16` |
-| `POST /api/approvals/:id/approve` | `backend/src/routes/approvals.js:66` |
-| `POST /api/approvals/:id/reject` | `backend/src/routes/approvals.js:172` |
-| `GET /api/inventory/items` | `backend/src/routes/inventory.js:19` |
-| `POST /api/inventory/items` | `backend/src/routes/inventory.js:116` |
-| `PATCH /api/inventory/items/:id` | `backend/src/routes/inventory.js:226` |
-| `GET /api/inventory/items/:id` | `backend/src/routes/inventory.js:301` |
-| `GET /api/inventory/movements` | `backend/src/routes/inventory.js:345` |
-| `POST /api/inventory/movements` | `backend/src/routes/inventory.js:428` |
-| `GET /api/inventory/movements/:id` | `backend/src/routes/inventory.js:623` |
-| `GET /api/inventory/stock-counts` | `backend/src/routes/inventory.js:673` |
-| `POST /api/inventory/stock-counts` | `backend/src/routes/inventory.js:724` |
-| `GET /api/inventory/stock-counts/:id` | `backend/src/routes/inventory.js:780` |
-| `PATCH /api/inventory/stock-counts/:id` | `backend/src/routes/inventory.js:838` |
-| `POST /api/inventory/stock-counts/:id/finalize` | `backend/src/routes/inventory.js:961` |
-| `GET /api/inventory/alerts` | `backend/src/routes/inventory.js:1081` |
-| `GET /api/backups` | `backend/src/routes/backups.js:28` |
-| `POST /api/backups/run` | `backend/src/routes/backups.js:86` |
-| `GET /api/backups/config` | `backend/src/routes/backups.js:334` |
-| `PATCH /api/backups/config` | `backend/src/routes/backups.js:353` |
-| `GET /api/restore-drills` | `backend/src/routes/backups.js:444` |
-| `POST /api/restore-drills` | `backend/src/routes/backups.js:480` |
-| `GET /api/restore-drills/:id` | `backend/src/routes/backups.js:747` |
-| `GET /api/data-quality/issues` | `backend/src/routes/dataQuality.js:18` |
-| `POST /api/data-quality/issues` | `backend/src/routes/dataQuality.js:70` |
-| `PATCH /api/data-quality/issues/:id` | `backend/src/routes/dataQuality.js:136` |
-| `GET /api/data-quality/reports` | `backend/src/routes/dataQuality.js:197` |
-| `GET /api/data-quality/reports/:id` | `backend/src/routes/dataQuality.js:232` |
-| `POST /api/data-quality/reports/generate` | `backend/src/routes/dataQuality.js:257` |
-| `GET /api/audit/logs` | `backend/src/routes/audit.js:17` |
-| `GET /api/audit/logs/:id` | `backend/src/routes/audit.js:80` |
-| `GET /api/backtrack/diff` | `backend/src/routes/audit.js:110` |
-| `GET /api/backtrack/replay` | `backend/src/routes/audit.js:156` |
-| `POST /api/backtrack/corrective-actions` | `backend/src/routes/audit.js:204` |
+| # | Endpoint | Route evidence |
+| --- | --- | --- |
+| 1 | `GET /api/auth/login-hints` | `apps/api/src/routes/auth.ts:82` |
+| 2 | `GET /api/auth/captcha` | `apps/api/src/routes/auth.ts:95` |
+| 3 | `POST /api/auth/login` | `apps/api/src/routes/auth.ts:102` |
+| 4 | `POST /api/auth/logout` | `apps/api/src/routes/auth.ts:141` |
+| 5 | `POST /api/auth/sessions/rotate` | `apps/api/src/routes/auth.ts:153` |
+| 6 | `GET /api/auth/sessions` | `apps/api/src/routes/auth.ts:176` |
+| 7 | `GET /api/auth/me` | `apps/api/src/routes/auth.ts:180` |
+| 8 | `POST /api/auth/change-password` | `apps/api/src/routes/auth.ts:189` |
+| 9 | `POST /api/auth/sessions/:sessionId/revoke` | `apps/api/src/routes/auth.ts:208` |
+| 10 | `GET /api/health` | `apps/api/src/routes/health.ts:4` |
+| 11 | `GET /api/search` | `apps/api/src/routes/search.ts:34` |
+| 12 | `GET /api/search/views` | `apps/api/src/routes/search.ts:53` |
+| 13 | `POST /api/search/views` | `apps/api/src/routes/search.ts:59` |
+| 14 | `GET /api/warehouses` | `apps/api/src/routes/warehouses.ts:172` |
+| 15 | `GET /api/warehouse-setup/options` | `apps/api/src/routes/warehouses.ts:202` |
+| 16 | `POST /api/warehouses` | `apps/api/src/routes/warehouses.ts:215` |
+| 17 | `PATCH /api/warehouses/:warehouseId` | `apps/api/src/routes/warehouses.ts:251` |
+| 18 | `POST /api/warehouses/:warehouseId/zones` | `apps/api/src/routes/warehouses.ts:317` |
+| 19 | `PATCH /api/zones/:zoneId` | `apps/api/src/routes/warehouses.ts:351` |
+| 20 | `POST /api/zones/:zoneId/bins` | `apps/api/src/routes/warehouses.ts:402` |
+| 21 | `PATCH /api/bins/:binId` | `apps/api/src/routes/warehouses.ts:499` |
+| 22 | `GET /api/warehouses/:warehouseId/tree` | `apps/api/src/routes/warehouses.ts:612` |
+| 23 | `POST /api/bins/:binId/toggle` | `apps/api/src/routes/warehouses.ts:649` |
+| 24 | `GET /api/bins/:binId/timeline` | `apps/api/src/routes/warehouses.ts:689` |
+| 25 | `POST /api/inventory/scan` | `apps/api/src/routes/inventory.ts:55` |
+| 26 | `POST /api/inventory/move` | `apps/api/src/routes/inventory.ts:63` |
+| 27 | `POST /api/inventory/receive` | `apps/api/src/routes/inventory.ts:80` |
+| 28 | `POST /api/inventory/pick` | `apps/api/src/routes/inventory.ts:105` |
+| 29 | `POST /api/moderation/reports` | `apps/api/src/routes/moderation.ts:51` |
+| 30 | `GET /api/moderation/queue` | `apps/api/src/routes/moderation.ts:77` |
+| 31 | `POST /api/moderation/reports/:reportId/status` | `apps/api/src/routes/moderation.ts:81` |
+| 32 | `GET /api/inbox` | `apps/api/src/routes/moderation.ts:106` |
+| 33 | `POST /api/inbox/:notificationId/read` | `apps/api/src/routes/moderation.ts:120` |
+| 34 | `POST /api/inbox/read-all` | `apps/api/src/routes/moderation.ts:142` |
+| 35 | `POST /api/integrations/inventory-sync` | `apps/api/src/routes/integrations.ts:12` |
+| 36 | `GET /api/metrics/summary` | `apps/api/src/routes/metrics.ts:4` |
+| 37 | `POST /api/catalog/reviews/:reviewId/images` | `apps/api/src/routes/catalog.ts:218` |
+| 38 | `GET /api/catalog/review-images/:imageId/content` | `apps/api/src/routes/catalog.ts:264` |
+| 39 | `GET /api/catalog/items` | `apps/api/src/routes/catalog.ts:336` |
+| 40 | `GET /api/catalog/favorites` | `apps/api/src/routes/catalog.ts:351` |
+| 41 | `GET /api/catalog/history` | `apps/api/src/routes/catalog.ts:355` |
+| 42 | `POST /api/catalog/items/:itemId/favorite` | `apps/api/src/routes/catalog.ts:359` |
+| 43 | `POST /api/catalog/items/:itemId/reviews` | `apps/api/src/routes/catalog.ts:396` |
+| 44 | `POST /api/catalog/reviews/:reviewId/followups` | `apps/api/src/routes/catalog.ts:430` |
+| 45 | `POST /api/catalog/items/:itemId/questions` | `apps/api/src/routes/catalog.ts:485` |
+| 46 | `POST /api/catalog/questions/:questionId/answers` | `apps/api/src/routes/catalog.ts:515` |
+| 47 | `GET /api/catalog/items/:itemId` | `apps/api/src/routes/catalog.ts:548` |
+| 48 | `PATCH /api/catalog/items/:itemId` | `apps/api/src/routes/catalog.ts:673` |
+| 49 | `GET /api/users` | `apps/api/src/routes/admin.ts:227` |
+| 50 | `GET /api/access-control/options` | `apps/api/src/routes/admin.ts:261` |
+| 51 | `POST /api/users` | `apps/api/src/routes/admin.ts:279` |
+| 52 | `PATCH /api/users/:userId` | `apps/api/src/routes/admin.ts:393` |
+| 53 | `PUT /api/users/:userId/access-control` | `apps/api/src/routes/admin.ts:571` |
+| 54 | `POST /api/users/:userId/unlock` | `apps/api/src/routes/admin.ts:617` |
+| 55 | `GET /api/audit-log` | `apps/api/src/routes/admin.ts:647` |
+| 56 | `GET /api/integration-clients` | `apps/api/src/routes/admin.ts:666` |
+| 57 | `POST /api/integration-clients` | `apps/api/src/routes/admin.ts:673` |
+| 58 | `POST /api/documents` | `apps/api/src/routes/documents.ts:102` |
+| 59 | `GET /api/documents` | `apps/api/src/routes/documents.ts:178` |
+| 60 | `GET /api/documents/:documentId` | `apps/api/src/routes/documents.ts:210` |
+| 61 | `POST /api/documents/:documentId/transition` | `apps/api/src/routes/documents.ts:272` |
+| 62 | `POST /api/documents/:documentId/execute-receiving` | `apps/api/src/routes/documents.ts:300` |
+| 63 | `POST /api/documents/:documentId/execute-shipping` | `apps/api/src/routes/documents.ts:305` |
+| 64 | `POST /api/documents/:documentId/execute-transfer` | `apps/api/src/routes/documents.ts:310` |
+| 65 | `GET /api/bulk/templates/catalog-items` | `apps/api/src/routes/bulk.ts:49` |
+| 66 | `POST /api/bulk/catalog-items/precheck` | `apps/api/src/routes/bulk.ts:68` |
+| 67 | `POST /api/bulk/catalog-items/import` | `apps/api/src/routes/bulk.ts:93` |
+| 68 | `GET /api/bulk/catalog-items/export` | `apps/api/src/routes/bulk.ts:123` |
+| 69 | `GET /api/bulk/jobs` | `apps/api/src/routes/bulk.ts:143` |
+| 70 | `GET /api/bulk/jobs/:jobId/results` | `apps/api/src/routes/bulk.ts:150` |
 
-Total endpoints: `79`
+Note: The route inventory contains 70 endpoints, not 69. Static route extraction from `apps/api/src/routes/*.ts` resolves 70 unique `METHOD + PATH` pairs under the global `/api` prefix in `apps/api/src/server.ts:60-73`.
 
 ## API Test Mapping Table
 
 | Endpoint | Covered | Test type | Test files | Evidence |
 | --- | --- | --- | --- | --- |
-| `GET /api/health` | yes | true no-mock HTTP | `API_tests/health.test.js` | `API_tests/health.test.js:4-13`; app route `backend/src/index.js:81` |
-| `POST /api/auth/login` | yes | true no-mock HTTP | `API_tests/auth.test.js`, `API_tests/z_security.test.js`, `API_tests/session-cap.test.js` | `API_tests/auth.test.js:3-48`; `API_tests/z_security.test.js:64-103` |
-| `POST /api/auth/logout` | yes | true no-mock HTTP | `API_tests/auth.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/auth.test.js:73-83`; `API_tests/session-cap.test.js:41,183`; `API_tests/z_security.test.js:771-772` |
-| `POST /api/auth/verify-device` | yes | true no-mock HTTP | `API_tests/auth.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/auth.test.js:142-157`; `API_tests/session-cap.test.js:35,110`; `API_tests/z_security.test.js:272-288,656-673` |
-| `GET /api/auth/me` | yes | true no-mock HTTP | `API_tests/auth.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/auth.test.js:53-91`; `API_tests/z_security.test.js:589,749-772` |
-| `POST /api/auth/recovery-codes` | yes | true no-mock HTTP | `API_tests/auth.test.js` | `API_tests/auth.test.js:96-103` |
-| `GET /api/users` | yes | true no-mock HTTP | `API_tests/users.test.js`, `API_tests/authorization.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/users.test.js:10-12`; `API_tests/authorization.test.js:12-65`; `API_tests/session-cap.test.js:238` |
-| `POST /api/users` | yes | true no-mock HTTP | `API_tests/users.test.js`, `API_tests/auth.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/users.test.js:16-27`; `API_tests/auth.test.js:111,132`; `API_tests/z_security.test.js:97,113,127,151,183,572,596,622` |
-| `PATCH /api/users/:id` | no | none | - | route only: `backend/src/routes/users.js:208` |
-| `GET /api/users/:id/sessions` | yes | true no-mock HTTP | `API_tests/users.test.js`, `API_tests/session-cap.test.js` | `API_tests/users.test.js:31-34`; `API_tests/session-cap.test.js:134,216` |
-| `DELETE /api/users/:id/sessions/:sessionId` | yes | true no-mock HTTP | `API_tests/session-cap.test.js` | `API_tests/session-cap.test.js:137` |
-| `POST /api/users/:id/unlock` | no | none | - | route only: `backend/src/routes/users.js:361` |
-| `POST /api/users/:id/session-exception` | yes | true no-mock HTTP | `API_tests/users.test.js`, `API_tests/session-cap.test.js` | `API_tests/users.test.js:54-58`; `API_tests/session-cap.test.js:128` |
-| `POST /api/users/:id/reset-password` | no | none | - | route only: `backend/src/routes/users.js:470` |
-| `GET /api/users/:id/stations` | yes | true no-mock HTTP | `API_tests/users.test.js` | `API_tests/users.test.js:37-40` |
-| `PUT /api/users/:id/stations` | yes | true no-mock HTTP | `API_tests/users.test.js` | `API_tests/users.test.js:43-50` |
-| `POST /api/users/:id/generate-codes` | yes | true no-mock HTTP | `API_tests/auth.test.js`, `API_tests/session-cap.test.js`, `API_tests/z_security.test.js` | `API_tests/auth.test.js:118`; `API_tests/session-cap.test.js:23`; `API_tests/z_security.test.js:118,132,159,577,601,629` |
-| `GET /api/stations` | yes | true no-mock HTTP | `API_tests/stations.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/stations.test.js:4-48`; `API_tests/authorization.test.js:102-151` |
-| `GET /api/stations/:id` | yes | true no-mock HTTP | `API_tests/stations.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/stations.test.js:44-50`; `API_tests/authorization.test.js:110-151` |
-| `POST /api/stations` | yes | true no-mock HTTP | `API_tests/stations.test.js` | `API_tests/stations.test.js:54-62` |
-| `PATCH /api/stations/:id` | no | none | - | route only: `backend/src/routes/stations.js:214` |
-| `GET /api/trainsets` | yes | true no-mock HTTP | `API_tests/health.test.js` | `API_tests/health.test.js:22-31` |
-| `POST /api/trainsets` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:382` |
-| `PATCH /api/trainsets/:id` | no | none | - | route only: `backend/src/routes/trainsets.js:77` |
-| `GET /api/trips/search` | yes | true no-mock HTTP | `API_tests/trips.test.js` | `API_tests/trips.test.js:4-128` |
-| `GET /api/trips/hot-searches` | yes | true no-mock HTTP | `API_tests/trips.test.js` | `API_tests/trips.test.js:87-97` |
-| `GET /api/schedules` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/schedules.test.js:11-24`; `API_tests/authorization.test.js:90`; `API_tests/z_security.test.js:198-199,610` |
-| `POST /api/schedules` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/schedules.test.js:48-72`; `API_tests/authorization.test.js:43-44,121,156,165`; `API_tests/z_security.test.js:308,392,454` |
-| `PATCH /api/schedules/:id` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/authorization.test.js` | `API_tests/schedules.test.js:135-161`; `API_tests/authorization.test.js:173` |
-| `GET /api/schedules/:id` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/authorization.test.js` | `API_tests/schedules.test.js:28-35`; `API_tests/authorization.test.js:125` |
-| `GET /api/schedules/:id/versions` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/z_security.test.js` | `API_tests/schedules.test.js:38-44`; `API_tests/z_security.test.js:407` |
-| `GET /api/schedules/:id/versions/:versionId` | no | none | - | route only: `backend/src/routes/schedules.js:452` |
-| `POST /api/schedules/:id/versions` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:420,469` |
-| `PATCH /api/schedules/:id/versions/:versionId` | no | none | - | route only: `backend/src/routes/schedules.js:669` |
-| `POST /api/schedules/:id/versions/:versionId/stops` | no | none | - | route only: `backend/src/routes/schedules.js:719` |
-| `PATCH /api/schedules/:id/versions/:versionId/stops/:stopId` | no | none | - | route only: `backend/src/routes/schedules.js:776` |
-| `DELETE /api/schedules/:id/versions/:versionId/stops/:stopId` | no | none | - | route only: `backend/src/routes/schedules.js:823` |
-| `POST /api/schedules/:id/versions/:versionId/seat-classes` | no | none | - | route only: `backend/src/routes/schedules.js:858` |
-| `PATCH /api/schedules/:id/versions/:versionId/seat-classes/:classId` | no | none | - | route only: `backend/src/routes/schedules.js:923` |
-| `DELETE /api/schedules/:id/versions/:versionId/seat-classes/:classId` | no | none | - | route only: `backend/src/routes/schedules.js:986` |
-| `POST /api/schedules/:id/versions/:versionId/validate` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/z_security.test.js` | `API_tests/schedules.test.js:76-84`; `API_tests/z_security.test.js:412,435` |
-| `POST /api/schedules/:id/versions/:versionId/publish` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:416` |
-| `POST /api/schedules/:id/versions/:versionId/request-approval` | no | none | - | route only: `backend/src/routes/schedules.js:1146` |
-| `GET /api/schedules/:id/versions/compare` | no | none | - | route only: `backend/src/routes/schedules.js:1235` |
-| `POST /api/schedules/:id/rollback` | yes | true no-mock HTTP | `API_tests/schedules.test.js`, `API_tests/z_security.test.js` | `API_tests/schedules.test.js:95-126`; `API_tests/z_security.test.js:251-263` |
-| `GET /api/approvals` | yes | true no-mock HTTP | `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/authorization.test.js:17-18,69-70`; `API_tests/z_security.test.js:230-231` |
-| `POST /api/approvals/:id/approve` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:236-237` |
-| `POST /api/approvals/:id/reject` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:241-242` |
-| `GET /api/inventory/items` | yes | true no-mock HTTP | `API_tests/inventory.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/inventory.test.js:10-28`; `API_tests/z_security.test.js:29,52,613,726` |
-| `POST /api/inventory/items` | yes | true no-mock HTTP | `API_tests/inventory.test.js` | `API_tests/inventory.test.js:32-47` |
-| `PATCH /api/inventory/items/:id` | no | none | - | route only: `backend/src/routes/inventory.js:226` |
-| `GET /api/inventory/items/:id` | no | none | - | route only: `backend/src/routes/inventory.js:301` |
-| `GET /api/inventory/movements` | yes | true no-mock HTTP | `API_tests/inventory.test.js` | `API_tests/inventory.test.js:78-80` |
-| `POST /api/inventory/movements` | yes | true no-mock HTTP | `API_tests/inventory.test.js` | `API_tests/inventory.test.js:51-72` |
-| `GET /api/inventory/movements/:id` | no | none | - | route only: `backend/src/routes/inventory.js:623` |
-| `GET /api/inventory/stock-counts` | yes | true no-mock HTTP | `API_tests/inventory.test.js`, `API_tests/z_security.test.js` | `API_tests/inventory.test.js:90-97`; `API_tests/z_security.test.js:21,45,718` |
-| `POST /api/inventory/stock-counts` | yes | true no-mock HTTP | `API_tests/inventory.test.js`, `API_tests/z_security.test.js` | `API_tests/inventory.test.js:96-101`; `API_tests/z_security.test.js:16,42,209,715` |
-| `GET /api/inventory/stock-counts/:id` | no | none | - | route only: `backend/src/routes/inventory.js:780` |
-| `PATCH /api/inventory/stock-counts/:id` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:35,57,732` |
-| `POST /api/inventory/stock-counts/:id/finalize` | no | none | - | route only: `backend/src/routes/inventory.js:961` |
-| `GET /api/inventory/alerts` | yes | true no-mock HTTP | `API_tests/inventory.test.js` | `API_tests/inventory.test.js:84-86` |
-| `GET /api/backups` | yes | true no-mock HTTP | `API_tests/backups.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/backups.test.js:12-16,72-84`; `API_tests/z_security.test.js:499-513` |
-| `POST /api/backups/run` | yes | true no-mock HTTP | `API_tests/backups.test.js`, `API_tests/z_security.test.js` | `API_tests/backups.test.js:61-68`; `API_tests/z_security.test.js:489-495` |
-| `GET /api/backups/config` | yes | true no-mock HTTP | `API_tests/backups.test.js` | `API_tests/backups.test.js:18-21` |
-| `PATCH /api/backups/config` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:536-554` |
-| `GET /api/restore-drills` | yes | true no-mock HTTP | `API_tests/backups.test.js` | `API_tests/backups.test.js:24-25,87-90` |
-| `POST /api/restore-drills` | no | none | - | route only: `backend/src/routes/backups.js:480` |
-| `GET /api/restore-drills/:id` | no | none | - | route only: `backend/src/routes/backups.js:747` |
-| `GET /api/data-quality/issues` | yes | true no-mock HTTP | `API_tests/backups.test.js`, `API_tests/authorization.test.js` | `API_tests/backups.test.js:30-32`; `API_tests/authorization.test.js:32-33,84-85` |
-| `POST /api/data-quality/issues` | yes | true no-mock HTTP | `API_tests/backups.test.js` | `API_tests/backups.test.js:35-40` |
-| `PATCH /api/data-quality/issues/:id` | no | none | - | route only: `backend/src/routes/dataQuality.js:136` |
-| `GET /api/data-quality/reports` | yes | true no-mock HTTP | `API_tests/backups.test.js` | `API_tests/backups.test.js:43-45` |
-| `GET /api/data-quality/reports/:id` | no | none | - | route only: `backend/src/routes/dataQuality.js:232` |
-| `POST /api/data-quality/reports/generate` | no | none | - | route only: `backend/src/routes/dataQuality.js:257` |
-| `GET /api/audit/logs` | yes | true no-mock HTTP | `API_tests/backups.test.js`, `API_tests/authorization.test.js`, `API_tests/z_security.test.js` | `API_tests/backups.test.js:49-56`; `API_tests/z_security.test.js:300,314,321` |
-| `GET /api/audit/logs/:id` | no | none | - | route only: `backend/src/routes/audit.js:80` |
-| `GET /api/backtrack/diff` | no | none | - | route only: `backend/src/routes/audit.js:110` |
-| `GET /api/backtrack/replay` | no | none | - | route only: `backend/src/routes/audit.js:156` |
-| `POST /api/backtrack/corrective-actions` | yes | true no-mock HTTP | `API_tests/z_security.test.js` | `API_tests/z_security.test.js:683-688` |
+| `GET /api/auth/login-hints` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | `it('returns generic login-hint responses for known and unknown accounts')`; `it('throttles repeated unauthenticated login-hint probes')` |
+| `GET /api/auth/captcha` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | `it('enforces captcha escalation, account lockout, and admin unlock')` |
+| `POST /api/auth/login` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts`, `apps/api/test/api-auth-session.integration.test.ts` | login, rotation, actor portal, logout/session lifecycle tests |
+| `POST /api/auth/logout` | Yes | true no-mock HTTP | `apps/api/test/api-auth-session.integration.test.ts` | `it('logs out and revokes the session so the old token is rejected on protected routes')`; `it('returns 401 when calling logout without a token')` |
+| `POST /api/auth/sessions/rotate` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | `it('rotates sessions atomically and invalidates the previous token')` |
+| `GET /api/auth/sessions` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts`, `apps/api/test/api-auth-session.integration.test.ts` | password change/session invalidation and revoke tests |
+| `GET /api/auth/me` | Yes | true no-mock HTTP | `apps/api/test/api-auth-session.integration.test.ts` | `it('GET /api/auth/me returns current user info for authenticated admin')` |
+| `POST /api/auth/change-password` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | `it('changes passwords, revokes active sessions, and blocks password reuse')` |
+| `POST /api/auth/sessions/:sessionId/revoke` | Yes | true no-mock HTTP | `apps/api/test/api-auth-session.integration.test.ts` | `it('revokes a specific session by sessionId so that session token is rejected')` |
+| `GET /api/health` | Yes | true no-mock HTTP | `apps/api/test/api-health.integration.test.ts`, `apps/api/test/runtime-security.test.ts` | `it('GET /api/health returns 200 with status ok for an authenticated user')`; additional transport/rate-limit checks exist in mocked runtime-security tests |
+| `GET /api/search` | Yes | true no-mock HTTP | `apps/api/test/api-search.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | visibility, deduplication, pagination, filter, validation tests |
+| `GET /api/search/views` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts` | admin/401/403 coverage |
+| `POST /api/search/views` | Yes | true no-mock HTTP | `apps/api/test/api-search.integration.test.ts` | create, cap conflict, update-at-cap tests |
+| `GET /api/warehouses` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts` | admin success and unauthenticated coverage |
+| `GET /api/warehouse-setup/options` | Yes | true no-mock HTTP | `apps/api/test/api-bulk.integration.test.ts` | `it('keeps warehouse setup temperature options aligned with bulk validators')` |
+| `POST /api/warehouses` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | create success, 403, malformed-body coverage |
+| `PATCH /api/warehouses/:warehouseId` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | update success and validation coverage |
+| `POST /api/warehouses/:warehouseId/zones` | Yes | true no-mock HTTP | `apps/api/test/api-validation.integration.test.ts` | nonexistent warehouse 404 and malformed-body coverage |
+| `PATCH /api/zones/:zoneId` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | zone rename and malformed-body coverage |
+| `POST /api/zones/:zoneId/bins` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts` | create bin success |
+| `PATCH /api/bins/:binId` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | update success and malformed-body coverage |
+| `GET /api/warehouses/:warehouseId/tree` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | out-of-scope 403 and missing warehouse 404 |
+| `POST /api/bins/:binId/toggle` | Yes | true no-mock HTTP | `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | toggle success and malformed-body coverage |
+| `GET /api/bins/:binId/timeline` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | out-of-scope 403 and invalid UUID 422 |
+| `POST /api/inventory/scan` | Yes | true no-mock HTTP | `apps/api/test/api-inventory.integration.test.ts` | no-match, item-only, multi-match, single-position, permission tests |
+| `POST /api/inventory/move` | Yes | true no-mock HTTP | `apps/api/test/api-inventory.integration.test.ts` | mismatch 422, move success, non-positive validation |
+| `POST /api/inventory/receive` | Yes | true no-mock HTTP | `apps/api/test/api-inventory.integration.test.ts` | receive success, temperature mismatch, canonical temperature, non-positive validation |
+| `POST /api/inventory/pick` | Yes | true no-mock HTTP | `apps/api/test/api-inventory.integration.test.ts`, `apps/api/test/api-inventory-pick.integration.test.ts` | pick success, permission denial, non-positive validation |
+| `POST /api/moderation/reports` | Yes | true no-mock HTTP | `apps/api/test/api-moderation.integration.test.ts`, `apps/api/test/api-catalog.integration.test.ts` | invalid payloads, scoping, deduplication, race-safety |
+| `GET /api/moderation/queue` | Yes | true no-mock HTTP | `apps/api/test/api-moderation.integration.test.ts` | scoped queue visibility |
+| `POST /api/moderation/reports/:reportId/status` | Yes | true no-mock HTTP | `apps/api/test/api-moderation.integration.test.ts`, `apps/api/test/api-catalog.integration.test.ts` | resolution/status update coverage |
+| `GET /api/inbox` | Yes | true no-mock HTTP | `apps/api/test/api-inbox.integration.test.ts` | list and 401 coverage |
+| `POST /api/inbox/:notificationId/read` | Yes | true no-mock HTTP | `apps/api/test/api-inbox.integration.test.ts` | mark-read coverage |
+| `POST /api/inbox/read-all` | Yes | true no-mock HTTP | `apps/api/test/api-inbox.integration.test.ts` | read-all coverage |
+| `POST /api/integrations/inventory-sync` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | rate limit, freshness, replay, department isolation, multi-instance, delivery persistence |
+| `GET /api/metrics/summary` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts` | admin/401/403 coverage |
+| `POST /api/catalog/reviews/:reviewId/images` | Yes | true no-mock HTTP | `apps/api/test/api-catalog-upload.integration.test.ts` | valid upload, 401, missing file, missing review |
+| `GET /api/catalog/review-images/:imageId/content` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | audited export and tamper-block tests |
+| `GET /api/catalog/items` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | department ABAC list coverage |
+| `GET /api/catalog/favorites` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | dedicated favorites/history scoping test |
+| `GET /api/catalog/history` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | dedicated favorites/history scoping test |
+| `POST /api/catalog/items/:itemId/favorite` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | favorite success and missing-item 404 |
+| `POST /api/catalog/items/:itemId/reviews` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | missing-item 404 reaches route handler |
+| `POST /api/catalog/reviews/:reviewId/followups` | Yes | true no-mock HTTP | `apps/api/test/api-catalog-upload.integration.test.ts` | success, 401, missing review |
+| `POST /api/catalog/items/:itemId/questions` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts`, `apps/api/test/api-security.integration.test.ts` | question success, scoping denial, missing-item 404 |
+| `POST /api/catalog/questions/:questionId/answers` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts`, `apps/api/test/api-security.integration.test.ts` | answer success, 403 for non-editor, missing-question 404 |
+| `GET /api/catalog/items/:itemId` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts`, `apps/api/test/api-security.integration.test.ts` | detail success, missing-item 404, ABAC denial |
+| `PATCH /api/catalog/items/:itemId` | Yes | true no-mock HTTP | `apps/api/test/api-catalog.integration.test.ts` | manager/admin update allowed, non-manager denied |
+| `GET /api/users` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | list-users encryption/non-leak test |
+| `GET /api/access-control/options` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts` | admin/401/403 coverage |
+| `POST /api/users` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts`, `apps/api/test/api-security.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | password policy, encrypted contacts, malformed-body coverage |
+| `PATCH /api/users/:userId` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | password history, deactivate, admin reset tests |
+| `PUT /api/users/:userId/access-control` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts` | `it('invalidates existing sessions after access-control updates')` |
+| `POST /api/users/:userId/unlock` | Yes | true no-mock HTTP | `apps/api/test/api-auth.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | unlock success, nonexistent 404, soft-delete 404, invalid UUID 422 |
+| `GET /api/audit-log` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | admin/401/403 and invalid query coverage |
+| `GET /api/integration-clients` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | secret non-leak listing coverage |
+| `POST /api/integration-clients` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | encrypted-at-rest, webhook target validation coverage |
+| `POST /api/documents` | Yes | true no-mock HTTP | `apps/api/test/api-documents.integration.test.ts` | create success, least-privilege, invalid typed payload, permission denial |
+| `GET /api/documents` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts`, `apps/api/test/api-documents.integration.test.ts` | admin list, 401/403, workflow scenarios |
+| `GET /api/documents/:documentId` | Yes | true no-mock HTTP | `apps/api/test/api-documents.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | detail success, post-transition detail, invalid UUID 422 |
+| `POST /api/documents/:documentId/transition` | Yes | true no-mock HTTP | `apps/api/test/api-documents.integration.test.ts`, `apps/api/test/api-validation.integration.test.ts` | workflow transitions and invalid enum coverage |
+| `POST /api/documents/:documentId/execute-receiving` | Yes | Yes, mixed | `apps/api/test/api-documents.integration.test.ts` | real execution/rollback tests plus one spy-based duplicate-execution test |
+| `POST /api/documents/:documentId/execute-shipping` | Yes | true no-mock HTTP | `apps/api/test/api-documents.integration.test.ts` | approved shipping execution |
+| `POST /api/documents/:documentId/execute-transfer` | Yes | true no-mock HTTP | `apps/api/test/api-documents.integration.test.ts` | approved transfer execution |
+| `GET /api/bulk/templates/catalog-items` | Yes | true no-mock HTTP | `apps/api/test/api-read-routes.integration.test.ts` | admin/401/403 attachment coverage |
+| `POST /api/bulk/catalog-items/precheck` | Yes | true no-mock HTTP | `apps/api/test/api-bulk.integration.test.ts` | valid CSV/XLSX, rollback setup, normalization, conflict visibility |
+| `POST /api/bulk/catalog-items/import` | Yes | true no-mock HTTP | `apps/api/test/api-bulk.integration.test.ts`, `apps/api/test/api-security.integration.test.ts` | import success, rollback durability, scoped-user import, validation failure 422 |
+| `GET /api/bulk/catalog-items/export` | Yes | true no-mock HTTP | `apps/api/test/api-bulk.integration.test.ts` | export taxonomy consistency |
+| `GET /api/bulk/jobs` | Yes | true no-mock HTTP | `apps/api/test/api-security.integration.test.ts` | owner/department overlap scoping |
+| `GET /api/bulk/jobs/:jobId/results` | Yes | true no-mock HTTP | `apps/api/test/api-bulk.integration.test.ts`, `apps/api/test/api-security.integration.test.ts` | imported-row results and scoped visibility |
+
+## API Test Classification
+
+### 1. True No-Mock HTTP
+- Primary evidence: `apps/api/test/helpers/integration.ts:7-39` boots the real Fastify app with `buildServer()` and uses `server.inject()` against registered routes.
+- Files:
+  - `apps/api/test/api-health.integration.test.ts`
+  - `apps/api/test/api-auth.integration.test.ts`
+  - `apps/api/test/api-auth-session.integration.test.ts`
+  - `apps/api/test/api-warehouses.integration.test.ts`
+  - `apps/api/test/api-inventory.integration.test.ts`
+  - `apps/api/test/api-inventory-pick.integration.test.ts`
+  - `apps/api/test/api-documents.integration.test.ts` except one spy-based execution test
+  - `apps/api/test/api-search.integration.test.ts`
+  - `apps/api/test/api-bulk.integration.test.ts`
+  - `apps/api/test/api-catalog.integration.test.ts`
+  - `apps/api/test/api-catalog-upload.integration.test.ts`
+  - `apps/api/test/api-moderation.integration.test.ts`
+  - `apps/api/test/api-inbox.integration.test.ts`
+  - `apps/api/test/api-security.integration.test.ts`
+  - `apps/api/test/api-read-routes.integration.test.ts`
+  - `apps/api/test/api-validation.integration.test.ts`
+
+### 2. HTTP With Mocking
+- `apps/api/test/runtime-security.test.ts`
+  - Mocks `AuthService.prototype.login` and `AuthService.prototype.touchSession`.
+  - Affects `POST /api/auth/login` and authenticated `GET /api/health`.
+- `apps/api/test/error-sanitization.test.ts`
+  - Mocks `AuthService.prototype.login`.
+  - Uses Fastify HTTP injection, but the auth service on the execution path is mocked.
+- `apps/api/test/api-documents.integration.test.ts`
+  - One test spies on `InventoryService.prototype.receiveInventoryInTransaction` for duplicate execution behavior.
+  - This makes that specific `POST /api/documents/:documentId/execute-receiving` scenario an HTTP test with mocking.
+
+### 3. Non-HTTP (unit/integration without HTTP)
+- `apps/api/test/auth-security.test.ts`
+- `apps/api/test/password-history.test.ts`
+- `apps/api/test/bootstrap-password-policy.test.ts`
+- `apps/api/test/password-policy.test.ts`
+- `apps/api/test/search.test.ts`
+- `apps/api/test/bulk-import.test.ts`
+- `apps/api/test/hmac.test.ts`
+- `apps/api/test/webhook-delivery.test.ts`
+- `apps/api/test/webhook-url.test.ts`
+- `apps/api/test/review-image-storage.test.ts`
+- `apps/api/test/process-error-logging.test.ts`
+- `apps/api/test/config-security.test.ts`
+
+## Mock Detection
+
+| File | Mock/stub evidence | What is mocked | Impact |
+| --- | --- | --- | --- |
+| `apps/api/test/runtime-security.test.ts` | `vi.spyOn(authModule.AuthService.prototype, 'login').mockResolvedValue(...)`; `vi.spyOn(authModule.AuthService.prototype, 'touchSession').mockResolvedValue(true)` | auth service login/session touch | HTTP with mocking only |
+| `apps/api/test/error-sanitization.test.ts` | `vi.spyOn(AuthService.prototype, 'login').mockRejectedValueOnce(...)` | auth login failure path | HTTP with mocking |
+| `apps/api/test/api-documents.integration.test.ts` | `vi.spyOn(InventoryService.prototype, 'receiveInventoryInTransaction').mockImplementation(...)` | receiving execution internals | one mixed HTTP scenario |
+| `apps/api/test/auth-security.test.ts` | service spies and fake captcha service | `AuthService` internals | non-HTTP unit only |
+| `apps/api/test/bulk-import.test.ts` | `vi.fn()` DB query stub | `BulkImportService` DB dependency | non-HTTP unit only |
 
 ## Coverage Summary
 
-- Total endpoints: `79`
-- Endpoints with HTTP tests: `51`
-- Endpoints with true no-mock HTTP tests: `51`
-- HTTP coverage: `64.6%`
-- True API coverage: `64.6%`
-
-Uncovered endpoint clusters:
-
-- User admin gaps: `PATCH /api/users/:id`, `POST /api/users/:id/unlock`, `POST /api/users/:id/reset-password`
-- Station and trainset mutation gaps: `PATCH /api/stations/:id`, `PATCH /api/trainsets/:id`
-- Schedule version-management gaps: `GET /api/schedules/:id/versions/:versionId`, `PATCH /api/schedules/:id/versions/:versionId`, all stop and seat-class mutation endpoints, `POST /api/schedules/:id/versions/:versionId/request-approval`, `GET /api/schedules/:id/versions/compare`
-- Inventory detail/finalization gaps: `PATCH /api/inventory/items/:id`, `GET /api/inventory/items/:id`, `GET /api/inventory/movements/:id`, `GET /api/inventory/stock-counts/:id`, `POST /api/inventory/stock-counts/:id/finalize`
-- Backup / restore drill gaps: `POST /api/restore-drills`, `GET /api/restore-drills/:id`
-- Data-quality gaps: `PATCH /api/data-quality/issues/:id`, `GET /api/data-quality/reports/:id`, `POST /api/data-quality/reports/generate`
-- Audit / backtracking gaps: `GET /api/audit/logs/:id`, `GET /api/backtrack/diff`, `GET /api/backtrack/replay`
+- Total endpoints: `70`
+- Endpoints with HTTP tests: `70`
+- Endpoints with true no-mock HTTP coverage: `70`
+- HTTP coverage: `100.0%`
+- True API coverage: `100.0%`
 
 ## Unit Test Summary
 
 ### Backend Unit Tests
 
-Backend unit test files:
+- Test files:
+  - `apps/api/test/auth-security.test.ts`
+  - `apps/api/test/password-history.test.ts`
+  - `apps/api/test/bootstrap-password-policy.test.ts`
+  - `apps/api/test/password-policy.test.ts`
+  - `apps/api/test/search.test.ts`
+  - `apps/api/test/bulk-import.test.ts`
+  - `apps/api/test/hmac.test.ts`
+  - `apps/api/test/webhook-delivery.test.ts`
+  - `apps/api/test/webhook-url.test.ts`
+  - `apps/api/test/review-image-storage.test.ts`
+  - `apps/api/test/process-error-logging.test.ts`
+  - `apps/api/test/config-security.test.ts`
 
-- `unit_tests/auth.test.js`
-- `unit_tests/sessionLifecycle.test.js`
-- `unit_tests/fuzzyMatch.test.js`
-- `unit_tests/validators.test.js`
-- `unit_tests/masks.test.js`
-- `unit_tests/backupPath.test.js`
+- Modules covered:
+  - Services: `AuthService`, `BulkImportService`, review image storage, webhook URL validation, webhook payload summarization
+  - Utilities/domain: password history, password policy/bootstrap policy, HMAC helpers, search query builder, config loading, error log sanitization
+  - Auth/guards/middleware-related logic: auth security behavior and runtime config rules
 
-Modules covered:
-
-- Controllers: none directly
-- Services: none directly
-- Repositories: none directly
-- Auth/guards/middleware:
-  - `backend/src/middleware/auth` via `unit_tests/auth.test.js:31-88`
-  - `resolveSession` in `backend/src/middleware/auth` via `unit_tests/sessionLifecycle.test.js:32-131`
-- Utilities:
-  - `backend/src/utils/fuzzyMatch` via `unit_tests/fuzzyMatch.test.js`
-  - `backend/src/utils/validators` via `unit_tests/validators.test.js`
-  - `backend/src/utils/masks` via `unit_tests/masks.test.js`
-  - `backend/src/utils/backupPath` via `unit_tests/backupPath.test.js`
-
-Important backend modules not tested:
-
-- Route handlers across `backend/src/routes/*.js` beyond indirect HTTP exercise
-- `backend/src/services/authService.js`
-- `backend/src/services/auditService.js`
-- `backend/src/services/backupScheduler.js`
-- `backend/src/services/dqScheduler.js`
-- `backend/src/middleware/rateLimiter.js`
-- `backend/src/middleware/scopeFilter.js`
-- `backend/src/middleware/errorHandler.js`
-- `backend/src/utils/crypto.js`
-- Database migration/seed logic in `backend/src/database/migrate.js` and `backend/src/database/seed.js`
+- Important backend modules not unit-tested directly:
+  - `apps/api/src/services/inventory.service.ts`
+  - `apps/api/src/services/document.service.ts`
+  - `apps/api/src/services/moderation.service.ts`
+  - `apps/api/src/services/access-control.service.ts`
+  - `apps/api/src/services/integration-security.service.ts`
+  - Route-layer handler logic in `apps/api/src/routes/*.ts`
 
 ### Frontend Unit Tests
 
-Frontend unit tests: PRESENT
+- Mandatory verdict: **Frontend unit tests: PRESENT**
+- Frameworks/tools detected:
+  - `node:test` from test files such as `apps/web/test/unit/auth-utils.test.ts`
+  - Angular `TestBed` from files such as `apps/web/test/unit/feature-pages-admin.test.ts`
+  - Angular HTTP testing from `apps/web/test/unit/auth-routing-and-expiry.test.ts`
+  - `jsdom` support is implied by `apps/web/package.json` and Angular test environment setup used by the component tests
 
-Frontend test files:
+- Frontend test files:
+  - `apps/web/test/unit/auth-routing-and-expiry.test.ts`
+  - `apps/web/test/unit/auth-utils.test.ts`
+  - `apps/web/test/unit/feature-pages-admin.test.ts`
+  - `apps/web/test/unit/feature-pages-catalog.test.ts`
+  - `apps/web/test/unit/feature-pages-warehouse.test.ts`
+  - `apps/web/test/unit/feature-pages-workflow.test.ts`
+  - `apps/web/test/unit/inventory-camera-utils.test.ts`
+  - `apps/web/test/unit/login-error-utils.test.ts`
+  - `apps/web/test/unit/login-page.component.test.ts`
+  - `apps/web/test/unit/search-utils.test.ts`
+  - `apps/web/test/unit/session-store.test.ts`
+  - `apps/web/test/unit/shell-layout.test.ts`
+  - `apps/web/test/unit/status-pages.component.test.ts`
 
-- `frontend/src/__tests__/router.test.js`
-- `frontend/src/__tests__/utils/cache.test.js`
-- `frontend/src/__tests__/stores/auth.test.js`
-- `frontend/src/__tests__/stores/inventory.test.js`
-- `frontend/src/__tests__/stores/schedules.test.js`
-- `frontend/src/__tests__/stores/search.test.js`
-- `frontend/src/__tests__/components/AlertBanner.test.js`
-- `frontend/src/__tests__/components/StatusBadge.test.js`
-- `frontend/src/__tests__/components/StationAutocomplete.test.js`
-- `frontend/src/__tests__/views/ApprovalList.test.js`
-- `frontend/src/__tests__/views/BackupDashboard.test.js`
-- `frontend/src/__tests__/views/DataQuality.test.js`
-- `frontend/src/__tests__/views/InventoryDashboard.test.js`
-- `frontend/src/__tests__/views/ItemList.test.js`
-- `frontend/src/__tests__/views/MovementList.test.js`
-- `frontend/src/__tests__/views/PublishWorkflow.test.js`
-- `frontend/src/__tests__/views/ScheduleDetail.test.js`
-- `frontend/src/__tests__/views/ScheduleEditor.test.js`
-- `frontend/src/__tests__/views/StockCountList.test.js`
-- `frontend/src/__tests__/views/TripSearch.test.js`
+- Components/modules covered:
+  - Components: `LoginPageComponent`, `ShellLayoutComponent`, `AdminPageComponent`, `UsersPageComponent`, `ProfilePageComponent`, `CatalogPageComponent`, `ModerationPageComponent`, `WarehousePageComponent`, `DocumentsPageComponent`, `BulkPageComponent`, `DashboardPageComponent`, `InboxPageComponent`, `AuditPageComponent`
+  - Auth/core logic: `SessionStore`, `authGuard`, `roleGuard`, `authExpiryInterceptor`, `auth-utils`
+  - Utilities: `login-error-utils`, `search-utils`, `inventory-camera-utils`
 
-Frameworks/tools detected:
+- Important frontend components/modules not tested directly:
+  - `apps/web/src/app/features/search/search-page.component.ts`
+  - `apps/web/src/app/features/inventory/inventory-page.component.ts`
+  - `apps/web/src/app/features/workspaces/admin-workspace-page.component.ts`
+  - `apps/web/src/app/features/workspaces/manager-workspace-page.component.ts`
+  - `apps/web/src/app/features/workspaces/moderator-workspace-page.component.ts`
+  - `apps/web/src/app/features/workspaces/catalog-workspace-page.component.ts`
+  - `apps/web/src/app/features/workspaces/clerk-workspace-page.component.ts`
+  - `apps/web/src/app/core/services/api.service.ts`
+  - `apps/web/src/app/app.routes.ts`
+  - `apps/web/src/app/features/auth/captcha-utils.ts`
 
-- `Vitest` from `frontend/package.json:16-22` and `frontend/vitest.config.js`
-- `@vue/test-utils` from `frontend/package.json:16-22`
-- `jsdom` from `frontend/package.json:16-22`
+### Cross-Layer Observation
 
-Frontend modules/components covered:
-
-- Router: `frontend/src/router/index.js` via `frontend/src/__tests__/router.test.js`
-- Stores: `auth`, `inventory`, `schedules`, `search`
-- Components: `AlertBanner`, `StatusBadge`, `StationAutocomplete`
-- Views: `ApprovalList`, `BackupDashboard`, `DataQuality`, `InventoryDashboard`, `ItemList`, `MovementList`, `ScheduleDetail`, `ScheduleEditor`, `StockCountList`, `TripSearch`
-- Utility: `frontend/src/utils/cache.js`
-
-Important frontend components/modules not tested:
-
-- `frontend/src/App.vue`
-- `frontend/src/main.js`
-- `frontend/src/utils/api.js`
-- `frontend/src/utils/deviceFingerprint.js`
-- `frontend/src/components/VersionCompare.vue`
-- `frontend/src/views/LoginPage.vue`
-- `frontend/src/views/ScheduleList.vue`
-- `frontend/src/views/UserManagement.vue`
-- `frontend/src/views/AuditLog.vue`
-
-Cross-layer observation:
-
-- Backend HTTP coverage is materially broader than frontend-to-backend verification.
-- Frontend tests are present, but the view/store tests are mostly isolated with `vi.mock('../../utils/api.js', ...)`, so they do not validate frontend ↔ backend integration.
-- Fullstack end-to-end coverage is missing. For a `fullstack` project, that is a major test-design gap even though frontend unit tests exist.
-
-## API Test Classification
-
-### 1. True No-Mock HTTP
-
-- All `API_tests/*.test.js` files.
-- Evidence:
-  - HTTP client helper uses Node `http`/`https` directly in `API_tests/setup.js:1-45`.
-  - Auth/session helpers still call real endpoints in `API_tests/setup.js:47-82`.
-  - No `jest.mock`, `vi.mock`, or DI override usage found under `API_tests/`.
-
-### 2. HTTP with Mocking
-
-- None found in `API_tests/`.
-
-### 3. Non-HTTP (unit/integration without HTTP)
-
-- All `unit_tests/*.test.js`
-- All `frontend/src/__tests__/*.test.js` and nested test files
-
-## Mock Detection Rules
-
-Mocks/stubs detected:
-
-- Database mocked in backend unit tests:
-  - `unit_tests/auth.test.js:7` mocks `../backend/src/database/connection`
-  - `unit_tests/sessionLifecycle.test.js:6` mocks `../backend/src/database/connection`
-- Frontend API mocked:
-  - `frontend/src/__tests__/views/ScheduleEditor.test.js:6`
-  - `frontend/src/__tests__/views/ApprovalList.test.js:5`
-  - `frontend/src/__tests__/views/BackupDashboard.test.js:5`
-  - `frontend/src/__tests__/views/DataQuality.test.js:5`
-  - `frontend/src/__tests__/views/TripSearch.test.js:5`
-  - `frontend/src/__tests__/views/MovementList.test.js:5`
-  - `frontend/src/__tests__/views/ItemList.test.js:5`
-  - `frontend/src/__tests__/views/ScheduleDetail.test.js:6`
-  - `frontend/src/__tests__/views/PublishWorkflow.test.js:10`
-  - `frontend/src/__tests__/views/StockCountList.test.js:5`
-  - `frontend/src/__tests__/stores/auth.test.js:6`
-  - `frontend/src/__tests__/stores/inventory.test.js:5`
-  - `frontend/src/__tests__/stores/schedules.test.js:5`
-  - `frontend/src/__tests__/stores/search.test.js:6`
-  - `frontend/src/__tests__/components/StationAutocomplete.test.js:5`
-- Additional frontend mocks:
-  - `frontend/src/__tests__/stores/auth.test.js:17` mocks `deviceFingerprint`
-  - `frontend/src/__tests__/stores/auth.test.js:22` mocks `cache`
-  - `frontend/src/__tests__/stores/search.test.js:14` and `frontend/src/__tests__/views/TripSearch.test.js:12` mock `cache`
-  - `frontend/src/__tests__/router.test.js:4` mocks the auth store
-
-Interpretation:
-
-- These mocks make the frontend suite unit-level and component-level, not real API coverage.
-- They do not reduce the classification of `API_tests/*.test.js`, which remain true no-mock HTTP by static evidence.
+- Backend coverage is materially stronger than frontend unit coverage.
+- The frontend has real unit tests, but major route-entry pages `SearchPageComponent` and `InventoryPageComponent` and all workspace components in `apps/web/src/app/app.routes.ts:34-67` have no direct unit-test evidence.
+- Strict fullstack judgment: this is a notable frontend unit-breadth gap, not a frontend-unit-test absence.
 
 ## API Observability Check
 
-Assessment: `moderate`
-
-Strong:
-
-- Most API tests name the exact route in the test title, for example `API_tests/schedules.test.js:11,28,38,48,76,135`.
-- Many tests show request bodies and assert response status plus selected payload fields, for example:
-  - `API_tests/auth.test.js:5-13`
-  - `API_tests/trips.test.js:5-20`
-  - `API_tests/users.test.js:16-24`
-
-Weak:
-
-- Several endpoints are only asserted on status or top-level `success`, with limited response-shape verification:
-  - `API_tests/backups.test.js:12-25`
-  - `API_tests/inventory.test.js:78-97`
-  - `API_tests/authorization.test.js:12-85`
-- Some mutation tests are existence-only and do not verify post-state deeply, for example `API_tests/z_security.test.js:382,416,688`.
+- Strong:
+  - Most integration tests name the endpoint in the `it(...)` block and show explicit request payloads and assertions, for example `apps/api/test/api-warehouses.integration.test.ts`, `apps/api/test/api-documents.integration.test.ts`, `apps/api/test/api-inventory.integration.test.ts`.
+- Weak:
+  - Some validation tests assert only standardized `422` envelopes without deep response-shape verification, for example `apps/api/test/api-validation.integration.test.ts`.
+  - Some route coverage is only by negative-path assertions, e.g. `POST /api/catalog/items/:itemId/reviews` is evidenced only through a missing-item `404` in `apps/api/test/api-catalog.integration.test.ts`.
 
 ## Tests Check
 
-- Success paths: present across auth, trips, schedules, inventory, backups, approvals, and users
-- Failure cases: present and strong for auth, validation, authorization, lockout, backup path validation
-- Edge cases: present for date boundaries, session caps, pending verification, lockout duplication, station-scope isolation
-- Validation: present but uneven; many endpoint-specific validation branches remain untested
-- Auth/permissions: strong on covered endpoints
-- Integration boundaries: backend HTTP layer is exercised for covered endpoints; frontend ↔ backend integration is not
-- Assertion depth: mixed; some tests check schema fragments, many only check status or `success`
-- Autogenerated/shallow signal: not obviously autogenerated, but coverage is incomplete and clustered
-
-`run_tests.sh` assessment:
-
-- `run_tests.sh` is not Docker-based.
-- It performs local dependency installs with `npm install` in three places: `run_tests.sh:13-15`, `run_tests.sh:50-52`, `run_tests.sh:72-74`.
-- Verdict under the prompt rule: `FLAG`
+- Success paths: broad backend success-path coverage exists across auth, warehouse, inventory, documents, bulk, catalog, moderation, and integrations.
+- Failure cases: strong coverage for auth lockout, validation, ABAC/RBAC denial, unsafe webhooks, replay/rate-limit/freshness, and invalid payloads.
+- Edge cases: present for pagination exactness, duplicate reporting race safety, item/barcode deduplication, temperature normalization, rollback durability, and session invalidation.
+- Validation depth: good on backend; dedicated `api-validation.integration.test.ts` and route-specific negative tests.
+- Auth/permissions: strong backend coverage.
+- Integration boundaries: strong backend HTTP-to-DB/integration coverage; frontend live FE↔BE coverage exists but is smoke-level only.
+- Assertions vs superficial checks:
+  - Mostly meaningful on backend; tests commonly verify DB side effects and response bodies.
+  - Frontend unit tests are meaningful but often use stubbed `ApiService` responses rather than actual HTTP or store interactions.
+- `run_tests.sh` check:
+  - Docker-based and acceptable under the rubric.
+  - Evidence: `run_tests.sh:11-14` builds and runs Docker services, then executes API migrate/bootstrap/test commands inside the API container.
 
 ## End-to-End Expectations
 
-- Project type is `fullstack`.
-- Expected: real FE ↔ BE tests.
-- Found: no frontend-to-backend end-to-end tests. Frontend tests use mocked API modules; backend tests call the backend directly.
-- Partial compensation exists through strong no-mock API coverage on covered routes plus frontend unit tests, but it does not close the fullstack integration gap.
+- Fullstack expectation: real FE ↔ BE tests should exist.
+- Static evidence:
+  - Mocked browser suite exists in `apps/web/playwright/ui-smoke.spec.ts` and explicitly uses `installMockApi`, so it is not FE↔BE proof.
+  - Real FE ↔ BE smoke exists in `apps/web/playwright/ui-local-smoke.spec.ts` with real login, search, inventory receive, document execution, moderation, and inbox scenarios.
+- Verdict:
+  - Real FE ↔ BE tests are present, but only as smoke coverage. This partially compensates for missing direct unit tests on `SearchPageComponent`, `InventoryPageComponent`, and workspace routes; it does not fully compensate.
 
-## Test Coverage Score (0–100)
+## Test Coverage Score (0-100)
 
-`57/100`
+- **97/100**
 
 ## Score Rationale
 
-- Positive:
-  - Real HTTP tests are present and clearly no-mock for covered endpoints.
-  - Security- and auth-related scenarios are tested with meaningful negative cases.
-  - Frontend unit tests are directly evidenced and use a valid Vue/Vitest stack.
-- Negative:
-  - Only `51/79` endpoints have any HTTP coverage.
-  - Large untested clusters exist in schedule version mutation, inventory detail/finalization, data-quality maintenance, audit backtracking, restore drills, and user admin flows.
-  - Frontend tests are mock-heavy and provide no FE ↔ BE runtime confidence.
-  - `run_tests.sh` depends on local installs, violating the preferred containerized test execution expectation in this audit.
+- High score justified by:
+  - 70/70 endpoints have visible HTTP coverage.
+  - 70/70 have visible true no-mock HTTP coverage.
+  - Backend tests exercise real DB-backed business flows and verify side effects.
+  - Unit coverage exists for multiple security-critical backend subsystems.
+  - Frontend unit tests are present and real FE↔BE smoke exists.
+- Score held below 100 because:
+  - Several important frontend route-entry modules have no direct unit-test evidence.
+  - Some route coverage is negative-path-only rather than full success-path coverage, especially `POST /api/catalog/items/:itemId/reviews`.
+  - Real FE↔BE browser coverage exists, but it is smoke-level rather than broad end-to-end depth.
 
 ## Key Gaps
 
-- Critical: No tests for `POST /api/schedules/:id/versions/:versionId/request-approval`, `GET /api/schedules/:id/versions/compare`, and all stop/seat-class version mutation endpoints despite those being central workflow routes.
-- Critical: No tests for `POST /api/inventory/stock-counts/:id/finalize` and no detail-route coverage for `GET /api/inventory/items/:id`, `GET /api/inventory/movements/:id`, or `GET /api/inventory/stock-counts/:id`.
-- High: No coverage for audit detail/backtracking reads: `GET /api/audit/logs/:id`, `GET /api/backtrack/diff`, `GET /api/backtrack/replay`.
-- High: No coverage for restore-drill creation/detail and data-quality patch/report generation endpoints.
-- High: Fullstack integration tests are absent; frontend coverage is isolated behind mocks.
+- Frontend unit breadth is still incomplete for a fullstack app. `SearchPageComponent`, `InventoryPageComponent`, and all five workspace components have no direct unit-test evidence despite being central routes in `apps/web/src/app/app.routes.ts:34-67`.
+- `POST /api/catalog/items/:itemId/reviews` is covered only via negative-path `404` evidence in `apps/api/test/api-catalog.integration.test.ts`; no visible success-path test sends a review to a valid item.
+- Important backend services are exercised strongly through integration tests, but several are not directly unit-tested in isolation: inventory, document workflow, moderation, access control, and integration-security services.
 
 ## Confidence & Assumptions
 
-- Confidence: `high`
+- Confidence: high.
 - Assumptions:
-  - Only statically visible routes in `backend/src/index.js` and `backend/src/routes/*.js` are in scope.
-  - A request that receives `401` or `403` on a real route still counts as endpoint coverage because the exact `METHOD + PATH` reaches the live Koa route/middleware chain.
-  - No hidden routes exist outside the inspected files.
+  - Coverage is evaluated strictly from visible static evidence only.
+  - A request counts as covered only when a visible test targets the exact route shape.
+  - Dynamic template URLs in tests were matched by static grep evidence where visible.
 
 # README Audit
 
-README location check: `README.md` exists at repo root.
+## Hard Gate Check
 
-## Hard Gate Failures
-
-- Project type is not explicitly declared at the top as one of `backend`, `fullstack`, `web`, `android`, `ios`, `desktop`. Inferred `fullstack` instead. Evidence: `README.md:1-24`.
-- Environment rules violated. README requires non-Docker runtime prerequisites and local runtime installs:
-  - `README.md:27-28` lists `Node.js 18+` and `OpenSSL`
-  - `README.md:54-91` documents manual non-Docker setup
-  - `README.md:66`, `README.md:75`, `README.md:88` include `npm install`
-- Demo credentials incomplete for an authenticated system. README defines roles `Guest`, `Host`, `Platform Operations` at `README.md:17-23`, but credentials only cover `admin` and `host1` at `README.md:94-100`. Guest handling is not explicitly documented.
+- `README.md` exists at repo root: pass.
+- Clean markdown/readable structure: pass. Evidence: structured headings and sections throughout `README.md:1-327`.
+- Project type declared at top: pass. Evidence: `README.md:3`.
+- Backend/fullstack startup includes `docker-compose up`: pass. Evidence: `README.md:38-41`.
+- Access method includes URL/port: pass. Evidence: `README.md:42-45`, login URLs `README.md:58-62`, `README.md:129-133`.
+- Verification method exists:
+  - API: partial but acceptable. Evidence: authenticated API health check at `README.md:44-45`.
+  - Web/UI: pass. Evidence: browser verification and live smoke sections at `README.md:80-108`, `README.md:289-296`.
+- Environment rules:
+  - No `npm install`, `pip install`, `apt-get`, or manual DB setup instructions found.
+  - Docker-contained startup/testing is stated repeatedly. Evidence: `README.md:47-50`, `README.md:261-278`, `docker-compose.yml`.
+  - Pass.
+- Demo credentials for auth-enabled system: pass. Evidence: `README.md:52-64`.
 
 ## High Priority Issues
 
-- README violates the strict Docker-contained environment rule by documenting a full manual setup path with local package installation and direct `node` execution. Evidence: `README.md:54-91`.
-- The top of the README does not declare project type in the required canonical form. Strict-mode fallback inference was required. Evidence: `README.md:1`.
-- Full authentication coverage is not documented. There is no explicit credential or "no authentication required" statement for the Guest role despite Guest being a declared role. Evidence: `README.md:17-23`, `README.md:94-100`.
+- No hard-gate high-priority failure found.
+- Verification for the API is described narratively, but there is no concrete `curl` or Postman example. Evidence: `README.md:44-45`. This weakens operational clarity, though it does not fully fail the gate.
 
 ## Medium Priority Issues
 
-- Prerequisites still signal a local-tooling dependency model instead of a fully Docker-contained model. Evidence: `README.md:27-28`.
-- Testing instructions also include direct local test commands using `npx` per package rather than a Docker-contained verification path only. Evidence: `README.md:141-167`.
-- README overstates verification flows that depend on runtime/manual checks, but does at least separate many of them under "Runtime Verification Requirements". Evidence: `README.md:169-219`.
+- The README’s frontend unit-test description is stale/incomplete. It says `docker-compose exec omnistock-web npm run test:unit` covers “frontend auth/search/camera helpers” at `README.md:293`, but direct file evidence shows component tests for admin, users, profile, catalog, moderation, warehouse, documents, bulk, dashboard, inbox, audit, shell, and login pages in `apps/web/test/unit/*.test.ts`.
+- Verification is scattered across multiple sections rather than one short “how to prove it works” sequence. Evidence: `README.md:36-50`, `README.md:80-108`, `README.md:211-219`, `README.md:289-296`.
 
 ## Low Priority Issues
 
-- Presentation and structure are generally readable and technically organized.
-- Tech stack, roles, scripts, and access URLs are clearly documented.
-- Verification guidance is better than average because the README includes explicit URLs and an HTTPS verification checklist.
+- The README is long and feature-dense. For operators, startup and verification are not as front-loaded as they could be.
+- The “Local bootstrap helper” section at `README.md:75-78` introduces a non-primary path that may distract readers even though it explicitly says Docker Compose remains the supported path.
 
 ## Engineering Quality
 
-- Tech stack clarity: good. Evidence: `README.md:5-14`
-- Architecture explanation: adequate. Evidence: `README.md:5-14`, `README.md:221+`
-- Testing instructions: present, but not compliant with strict environment rules. Evidence: `README.md:141-167`
-- Security/roles: roles are explained, TLS expectations are documented, but credential coverage is incomplete. Evidence: `README.md:17-23`, `README.md:169-183`
-- Workflows: backup, HTTPS verification, and runtime verification are documented. Evidence: `README.md:117-139`, `README.md:169-219`
-- Presentation quality: good markdown readability overall
+- Tech stack clarity: strong. Evidence: `README.md:7-26`, `README.md:253-257`.
+- Architecture explanation: good enough for a README. It explains backend/frontend split, Docker topology, roles, security model, and scheduler/integration design.
+- Testing instructions: strong and Docker-contained. Evidence: `README.md:259-296`.
+- Security/roles: strong. Evidence: role descriptions `README.md:28-34`, credential table `README.md:56-62`, security sections `README.md:161-194`, encryption section `README.md:221-251`.
+- Workflows: strong. Evidence: browser verification, scheduler verification, encryption verification, and feature notes.
+- Presentation quality: good. It is readable, structured, and specific.
+
+## Hard Gate Failures
+
+- None.
 
 ## README Verdict
 
-`FAIL`
+- **PASS**
 
-Rationale:
+## README Rationale
 
-- Startup instructions hard gate: pass for `docker-compose up` because `README.md:44` includes `docker-compose up --build`.
-- Access method hard gate: pass because URLs and ports are explicit at `README.md:49-51`.
-- Verification method hard gate: pass because there are concrete verification steps at `README.md:169-219`.
-- Environment rules hard gate: fail because the README explicitly permits manual installs and non-Docker operation.
-- Demo credentials hard gate: fail because auth exists and credentials are not documented for all declared roles.
-
+- The README satisfies the strict fullstack hard gates:
+  - declares project type
+  - documents Docker startup with `docker-compose up`
+  - gives access URLs
+  - provides verification guidance
+  - keeps setup Docker-contained
+  - includes demo credentials for all visible roles
+- It is not perfect:
+  - API verification should include a concrete command example.
+  - Some testing documentation is less precise than the actual test suite.
